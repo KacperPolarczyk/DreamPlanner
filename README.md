@@ -1,3 +1,2 @@
-# DreamPlaner
+# DreamPlanner
 Aplikacja do planowania dyspozycyjności
-test
