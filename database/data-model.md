@@ -127,3 +127,36 @@ erDiagram
     SHIFT_REQUIREMENTS ||--o{ SHIFT_ASSIGNMENTS : has
     USERS ||--o{ SHIFT_ASSIGNMENTS : receives
 ```
+
+## 10. Dane demonstracyjne
+
+Plik `database/fixtures/dreamplanner.json` zawiera kompletny zestaw fikcyjnych
+danych do lokalnych widoków aplikacji: stanowiska, role, użytkowników, grafiki,
+zapotrzebowanie, deklaracje dyspozycyjności i przydziały.
+
+Wszystkie relacje korzystają z identyfikatorów wewnątrz tego samego pliku,
+zgodnie z modelem opisanym powyżej. Na przykład `shift_requirements.position_id`
+odwołuje się do `positions[].id`. Frontend może skopiować plik do katalogu danych
+aplikacji i zaimportować go jako jeden obiekt JSON. Nazwy stanowisk, użytkowników
+i obsadę zmiany można uzyskać przez połączenie odpowiednich identyfikatorów.
+Nie są potrzebne żadne dane dostępowe do Azure.
+
+Zestaw zawiera opublikowany grafik na listopad 2026 oraz pusty szkic na grudzień.
+Pozwala pokazać pełną obsadę, zmianę bez przydziałów, nieaktywne stanowisko,
+pełną i częściową dyspozycyjność, brak deklaracji oraz zatwierdzony przydział
+mimo niedostępności. Szczegóły scenariuszy:
+
+| Pracownik / zmiana | Wynik porównania dyspozycyjności | Przydział |
+| --- | --- | --- |
+| Anna / zmiana 1 | `available` — pokrycie 08:00–16:00 | Bez ostrzeżenia |
+| Piotr / zmiana 1 | `unknown` — dostępność tylko 09:00–15:00 | Ostrzeżenie potwierdzone |
+| Ewa / zmiana 2 | `unknown` — brak deklaracji | Ostrzeżenie potwierdzone |
+| Anna / zmiana 3 | `unavailable` — zadeklarowana niedostępność | Ostrzeżenie potwierdzone |
+| Zmiana 4 | Brak przydziałów | Jedno wolne miejsce |
+
+Są to dane prezentacyjne, nie migracja ani seed SQL. `users` nie zawiera
+`password_hash`; pominięto również techniczne znaczniki czasu użytkowników
+i zgłoszeń, które baza uzupełnia domyślnie. Adresy `example.com` i wszystkie
+identyfikatory są fikcyjne. Makieta nie implementuje uwierzytelniania ani
+autoryzacji i nie stanowi zatwierdzonego kontraktu API. Docelowy backend
+udostępnia dane zgodnie z rolą użytkownika, a nie cały zestaw wszystkim osobom.

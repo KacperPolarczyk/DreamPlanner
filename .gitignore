@@ -7,3 +7,10 @@
 **/tfplan
 **/crash.log
 **/crash.*.log
+
+# Local configuration and credentials (templates may be committed)
+.env
+.env.*
+!.env.example
+.pgpass
+.pg_service.conf
