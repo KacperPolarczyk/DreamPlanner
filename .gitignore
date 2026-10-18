@@ -14,3 +14,8 @@
 !.env.example
 .pgpass
 .pg_service.conf
+
+# Python tooling
+__pycache__/
+*.py[cod]
+.venv/
