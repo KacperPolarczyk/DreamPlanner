@@ -40,7 +40,7 @@ Private Endpoint otrzyma adres prywatny z podsieci `10.13.3.0/24`. Nie jest to s
 
 **Reguła zapory na poziomie Azure Database for PostgreSQL:**
 
-- Nazwa: `allow-dba-80-68-235-174`
+- Nazwa: `allow-dba`
 - Start IP: `80.68.235.174`
 - End IP: `80.68.235.174`
 
@@ -106,4 +106,57 @@ Połączenie administracyjne przez publiczny endpoint jest dopuszczone wyłączn
 
 ---
 
-Dokument określa wymagania techniczne warstwy Database systemu DreamPlanner. Adresacja oraz nazwy zasobów stanowią założenia projektowe do zatwierdzenia przed wdrożeniem.
+## 9. Konfiguracja wdrożeniowa i dostęp backendu
+
+Zasoby warstwy danych są zdefiniowane w `terraform/database.tf`, a uprawnienia
+zespołu w `terraform/team.tf`. Parametry projektu:
+
+| Element | Wartość |
+| --- | --- |
+| Serwer | `psql-dreamplanner-dev-77076.postgres.database.azure.com` |
+| Baza | `dreamplanner` |
+| Silnik | PostgreSQL 16, Burstable B1ms, 32 GiB |
+| Konto aplikacji | `dreamplanner_app` — odczyt i zapis danych, bez DDL |
+| Konto migracji | `dreamplanner_migrator` — właściciel schematu `public` |
+| Magazyn sekretów | `kv-dreamplanner-77076` |
+| Sekret aplikacji | `database-url-app` |
+| Sekret migracji | `database-url-migration` |
+| Tożsamość backendu | `id-dreamplanner-backend` |
+
+Backendowiec (`merchwadawid@fastmail.com`) otrzymuje odczyt zasobów
+grupy projektu oraz dwóch sekretów: aplikacji i migracji. Frontendowiec
+(`wrx87738@student.wroclaw.merito.pl`) otrzymuje odczyt zasobów bez dostępu do
+sekretów bazy. Konta gości wymagają zaakceptowania zaproszenia do katalogu.
+Uprawnienia do wdrażania aplikacji należy nadać na konkretnych zasobach hostingu,
+gdy powstaną, bez udostępniania frontendowi zarządzania hostem backendu.
+
+Terraform nie tworzy tabel aplikacyjnych ani kont SQL poza administratorem.
+DBA uruchamia `database/bootstrap.py` po wdrożeniu, aby utworzyć konta SQL
+i nadać uprawnienia. Kolejne tabele tworzą migracje Alembic uruchamiane kontem
+migracji; domyślne uprawnienia przyznają kontu aplikacji dostęp do tych tabel
+i sekwencji. Pełne polecenia znajdują się w `terraform/README.md`.
+
+Sekrety zawierają standardowe URI PostgreSQL. Dla SQLAlchemy z Psycopg 3 należy
+ustawić sterownik bez ręcznej przebudowy hasła:
+
+```python
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+
+url = make_url(os.environ["DATABASE_URL"]).set(drivername="postgresql+psycopg")
+engine = create_engine(url, pool_pre_ping=True)
+```
+
+URI wymaga `sslmode=verify-full` i wskazuje zestaw certyfikatów CA w pliku
+`/etc/ssl/certs/ca-certificates.crt`. W obrazie Linux backendu musi być zainstalowany
+pakiet `ca-certificates`; dla innego systemu należy dostosować ścieżkę CA.
+Connection string trafia wyłącznie do
+konfiguracji backendu. Nie należy umieszczać go w zmiennych `VITE_*` ani logach.
+
+Backend musi faktycznie korzystać z podsieci `snet-backend` i prywatnego DNS.
+Sam hosting w Azure nie daje dostępu do prywatnego endpointu. W przypadku
+App Service DevOps musi skonfigurować wychodzącą integrację z VNet i delegację
+podsieci zgodnie z wymaganiami hostingu. Test `check_connection.py` uruchomiony
+z komputera DBA weryfikuje dostęp administracyjny; test z hosta backendu jest
+oddzielnym etapem integracji.

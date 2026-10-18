@@ -1,7 +1,7 @@
 
 # DreamPlanner — Azure Infrastructure
 
-Terraform configuration for the DreamPlanner network infrastructure deployed to Microsoft Azure.
+Terraform configuration for the DreamPlanner network, PostgreSQL and database access in Microsoft Azure.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ The infrastructure uses a three-tier network architecture in the Azure Poland Ce
 | Backend Subnet | snet-backend | 10.13.2.0/24 |
 | Database Subnet | snet-database | 10.13.3.0/24 |
 
-The database subnet is reserved for a future Azure Private Endpoint for PostgreSQL Flexible Server. It is not delegated to the PostgreSQL service.
+The database subnet hosts the PostgreSQL Private Endpoint. It is not delegated to the PostgreSQL service.
 
 ## Network Security
 
@@ -27,7 +27,7 @@ Three Network Security Groups are associated with the subnets:
 
 Additional default Azure NSG rules apply.
 
-These rules define the intended network access policy. Application-level connectivity has not yet been tested.
+The PostgreSQL endpoint accepts private connections from the backend subnet. A backend host must be connected to this VNet to use the private route; deploying an application somewhere in Azure alone is insufficient.
 
 ## Terraform Structure
 
@@ -38,6 +38,8 @@ These rules define the intended network access policy. Application-level connect
 | subnets.tf | Three Azure subnets |
 | nsg.tf | Network Security Groups, rules and associations |
 | outputs.tf | Infrastructure resource identifiers |
+| database.tf | PostgreSQL, Private Endpoint, DNS, Key Vault and backend identity |
+| team.tf | Team visibility, database secret access and identity assignment |
 | backend.hcl | Remote state backend configuration |
 | .terraform.lock.hcl | Locked provider dependencies |
 
@@ -63,6 +65,19 @@ Prerequisites:
 - An authenticated Azure account
 - Appropriate Azure RBAC permissions
 - Storage Blob Data Contributor access to the state container
+- Key Vault Secrets Officer access for the identity running Terraform after the vault exists
+- Three distinct SQL passwords supplied as the sensitive `database_passwords` variable
+
+The DBA's state-container access is a bootstrap role assignment outside this Terraform state.
+It is scoped to the `tfstate` container, not the entire subscription. Azure `Owner` alone
+does not grant blob data access.
+
+Supply `database_passwords` with keys `admin`, `migration`, and `app` through
+`TF_VAR_database_passwords` or an ignored `database.auto.tfvars`. Use three separately
+generated passwords, each at least 24 characters long. Never commit this file.
+Terraform state and saved plans contain secret values; only trusted infrastructure
+administrators should have access to the state container. Connection strings are
+stored in Key Vault and are not emitted as Terraform outputs.
 
 Run:
 
@@ -83,6 +98,94 @@ terraform apply
 
 Review the Terraform plan before applying any changes.
 
+The database is PostgreSQL 16 on `B_Standard_B1ms` with 32 GiB storage, seven-day
+local backup retention and no HA or geo-redundant backup. This is a development
+configuration. Compute, storage, Private Endpoint and Key Vault may consume Azure
+credits; a student subscription does not by itself guarantee zero cost.
+
+The only public database firewall rule admits `dba_public_ipv4`. Do not add the
+Azure-wide `0.0.0.0` exception. Backend traffic uses the Private Endpoint and the
+`privatelink.postgres.database.azure.com` DNS zone linked to the project VNet.
+Always use the server FQDN, not the endpoint IP, so TLS hostname verification works.
+
+The server and database have `prevent_destroy` protection. Review intentional
+replacement or removal explicitly rather than bypassing the lifecycle guard.
+
+## SQL initialization
+
+Terraform creates the server and database, while `database/bootstrap.py` creates
+SQL logins and grants. Key Vault secrets alone do not create SQL users.
+Run from the repository root and the allowed DBA IP, with Azure CLI authenticated as the DBA:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r database/requirements.txt
+.venv/bin/python database/bootstrap.py --vault-name kv-dreamplanner-77076
+.venv/bin/python database/check_connection.py --vault-name kv-dreamplanner-77076
+```
+
+Both scripts read secrets into memory and do not print passwords. The check creates
+a uniquely named disposable table as the migration login, verifies runtime CRUD,
+checks TLS and denies runtime DDL, then removes the table. Run the same check from
+the backend network to verify the private route; a successful DBA public connection
+does not prove backend connectivity.
+
+When rotating migration or application passwords, update the sensitive Terraform
+input and Key Vault through Terraform, then rerun the bootstrap during a maintenance
+window to synchronize the SQL logins. Terraform alone only rotates the administrator
+login on the PostgreSQL server.
+
+Application tables are deployed by the backend's Alembic migrations using
+`dreamplanner_migrator`; `schema.sql` remains the reference model. Do not apply
+both the reference SQL and an initial Alembic migration to the same database.
+
+## Team and backend handoff
+
+| Principal | Access |
+| --- | --- |
+| DBA | Existing Azure ownership; Key Vault Secrets Officer on the project vault; SQL administrator |
+| Backend developer | Reader on the project resource group; read only `database-url-app` and `database-url-migration`; Managed Identity Operator on the backend identity |
+| Frontend developer | Reader on the project resource group; no database secrets or SQL login |
+| `id-dreamplanner-backend` | Read only `database-url-app` |
+
+Guest users must accept their tenant invitation. Invitations are created once
+outside Terraform; the guest object IDs are inputs to the role assignments.
+The project tenant is `d6e86b7e-9310-46e8-9e3c-b44f06df413f`.
+Reader enables inspection, not application deployment. Assign deployment roles on
+the individual hosting resources once DevOps creates them; a frontend developer
+must not be able to edit the backend host and inherit its database identity.
+
+The backend developer can retrieve the two named secrets after accepting the
+invitation and signing in to the project tenant. Secret-scoped permissions do not
+allow listing all secrets in the vault; address each secret by its exact name:
+
+```bash
+az login --tenant d6e86b7e-9310-46e8-9e3c-b44f06df413f
+export DATABASE_URL="$(az keyvault secret show --vault-name kv-dreamplanner-77076 --name database-url-app --query value -o tsv)"
+export MIGRATION_DATABASE_URL="$(az keyvault secret show --vault-name kv-dreamplanner-77076 --name database-url-migration --query value -o tsv)"
+```
+
+These commands put values into the process environment without printing them.
+Retrieving a secret does not open a network route to PostgreSQL: use the database
+connection from the backend network. The application host should obtain only the
+runtime secret through its managed identity, not a developer's interactive login.
+
+The backend host must:
+
+1. Use the backend subnet (or supported VNet integration) and resolve the PostgreSQL FQDN through the linked private DNS zone.
+2. Attach `backend_identity_id` and use its client ID when selecting a user-assigned managed identity.
+3. Resolve the `app` URI from `database_secret_uris` into the server-side `DATABASE_URL` setting.
+4. Use the separate migration secret only for Alembic, never for normal request handling.
+5. Install the Linux `ca-certificates` package. Connection strings use `sslmode=verify-full` and the explicit CA bundle `/etc/ssl/certs/ca-certificates.crt`, configurable through `database_ssl_root_cert`.
+
+The explicit CA path is required because a bundled libpq/OpenSSL client can use
+a different default certificate directory from the host OS. On a different OS,
+adjust the trusted CA path without disabling certificate or hostname verification.
+
+No backend host is created by this database configuration. App Service requires
+outbound VNet integration; a private endpoint on the web app is not a substitute.
+DevOps owns the hosting-specific subnet delegation and deployment permissions.
+
 ## Verification
 
 After deployment:
@@ -96,9 +199,9 @@ A successful deployment should result in no unexpected infrastructure changes.
 
 ## Future Work
 
-- PostgreSQL Flexible Server deployment
-- Azure Private Endpoint and Private DNS configuration
 - Frontend and backend hosting
+- Backend VNet integration and runtime Key Vault configuration
+- Alembic migrations and end-to-end API/database verification
 - CI/CD pipelines using GitHub Actions
 - Monitoring and additional security hardening
 
