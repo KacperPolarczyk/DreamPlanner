@@ -1,75 +1,107 @@
-# React + TypeScript + Vite
+# DreamPlanner – Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Warstwa prezentacji (Presentation Layer) aplikacji **DreamPlanner**, służącej do ustalania i zarządzania grafikiem zleceniobiorców oraz pracowników.
 
-Currently, two official plugins are available:
+Frontend komunikuje się wyłącznie z REST API backendu. Nie łączy się bezpośrednio z bazą danych i nie przechowuje żadnych haseł ani connection stringów.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Stos technologiczny
 
-## React Compiler
+- React
+- Vite
+- TypeScript
+- ESLint
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Wymagania
 
-## Expanding the ESLint configuration
+- Node.js 20.19+ lub 22.12+ (wymóg Vite)
+- npm
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Uruchomienie lokalne
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Aplikacja uruchomi się pod adresem wyświetlonym w terminalu (domyślnie `http://localhost:5173/`).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Dostępne polecenia
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Polecenie | Opis |
+|---|---|
+| `npm run dev` | uruchamia serwer developerski z hot reload |
+| `npm run build` | buduje wersję produkcyjną do katalogu `dist/` |
+| `npm run preview` | lokalny podgląd zbudowanej aplikacji |
+| `npm run lint` | sprawdza kod przy użyciu ESLint |
+
+## Zmienne środowiskowe
+
+Adres API nie jest zapisany w kodzie. Konfiguruje się go w pliku `.env.local`, wzorowanym na `.env.example`:
 
 ```
+VITE_API_BASE_URL=http://localhost:3000/api
+```
+
+- `.env.example` jest w repozytorium i służy jako wzór dla zespołu.
+- `.env.local` jest wykluczony w `.gitignore` i nie może trafić na GitHuba.
+- Zmienne Vite są wczytywane przy starcie serwera i wbudowywane w aplikację podczas `npm run build`. Po zmianie wartości trzeba zrestartować `npm run dev` lub zbudować aplikację ponownie.
+
+W kodzie adres jest dostępny jako `import.meta.env.VITE_API_BASE_URL`.
+
+## Struktura katalogu
+
+```
+frontend/
+├── src/
+│   ├── App.tsx                          # główny komponent aplikacji
+│   ├── DataList.tsx                     # widok grafiku zmian (tabela)
+│   └── database/fixtures/
+│       └── dreamplanner.json            # dane makietowe (kopia z /database/fixtures)
+├── public/
+├── .env.example                         # wzór konfiguracji
+├── Dockerfile                           # build + serwowanie przez Nginx
+├── package.json
+└── vite.config.ts
+```
+
+## Dane makietowe (mock data)
+
+Do czasu uruchomienia API widok korzysta z pliku `src/database/fixtures/dreamplanner.json`, przygotowanego przez zespół i odzwierciedlającego model danych (stanowiska, role, użytkownicy, grafiki, zmiany, dostępności, przypisania).
+
+Aktualny widok (`DataList.tsx`) pokazuje grafik zmian na dany miesiąc: datę, godziny, stanowisko, obsadę (przypisani / wymagani), nazwiska pracowników i uwagi. Dane łączone są po kluczach obcych (`position_id`, `shift_requirement_id`, `user_id`).
+
+Plik w `src/database/fixtures/` jest kopią pliku z katalogu `/database/fixtures` w głównym repozytorium. Przy zmianie modelu danych kopię należy zaktualizować.
+
+## Integracja z backendem (plan)
+
+1. Otrzymać od zespołu backendu adres API i ustawić go w `VITE_API_BASE_URL`.
+2. Zastąpić import pliku JSON wywołaniami `fetch()` do API.
+3. Dodać ekran logowania i obsługę uwierzytelniania zgodnie z ustaleniami z backendem.
+4. Przetestować logowanie i operacje na danych z poziomu interfejsu na wdrożonej wersji.
+
+## Wdrożenie
+
+Aplikacja jest przygotowana do wdrożenia w warstwie Web (Public Subnet) jako pliki statyczne serwowane przez Nginx.
+
+```bash
+docker build -t dreamplanner-frontend .
+docker run -p 8080:80 dreamplanner-frontend
+```
+
+Po uruchomieniu aplikacja jest dostępna pod `http://localhost:8080/`.
+
+Alternatywnie zbudowany katalog `dist/` można wdrożyć na statyczny hosting, np. Azure Static Web Apps.
+
+## Architektura
+
+```
+Użytkownik → Frontend (React/Vite) → REST API (Backend) → PostgreSQL
+```
+
+Frontend należy do warstwy prezentacji. Dostęp do danych odbywa się wyłącznie przez REST API.
+
+## Autor
+
+Mikołaj Suchodolski – Frontend Developer
