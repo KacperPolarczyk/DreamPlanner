@@ -1,0 +1,229 @@
+{
+  "positions": [
+    {
+      "id": 1,
+      "name": "Kuchnia",
+      "is_active": true
+    },
+    {
+      "id": 2,
+      "name": "Obsługa sali",
+      "is_active": true
+    },
+    {
+      "id": 3,
+      "name": "Recepcja",
+      "is_active": false
+    }
+  ],
+  "roles": [
+    {
+      "id": 1,
+      "code": "admin",
+      "name": "Administrator"
+    },
+    {
+      "id": 2,
+      "code": "manager",
+      "name": "Menadżer"
+    },
+    {
+      "id": 3,
+      "code": "employee",
+      "name": "Pracownik"
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "role_id": 1,
+      "email": "admin@example.com",
+      "full_name": "Administrator Demo",
+      "is_active": true
+    },
+    {
+      "id": 2,
+      "role_id": 2,
+      "email": "manager@example.com",
+      "full_name": "Marta Kowalska",
+      "is_active": true
+    },
+    {
+      "id": 3,
+      "role_id": 3,
+      "email": "anna@example.com",
+      "full_name": "Anna Nowak",
+      "is_active": true
+    },
+    {
+      "id": 4,
+      "role_id": 3,
+      "email": "piotr@example.com",
+      "full_name": "Piotr Zieliński",
+      "is_active": true
+    },
+    {
+      "id": 5,
+      "role_id": 3,
+      "email": "ewa@example.com",
+      "full_name": "Ewa Wiśniewska",
+      "is_active": true
+    }
+  ],
+  "schedules": [
+    {
+      "id": 1,
+      "year": 2026,
+      "month": 11,
+      "status": "published",
+      "created_by": 2,
+      "created_at": "2026-10-01T08:00:00Z",
+      "collection_opened_at": "2026-10-02T08:00:00Z",
+      "collection_closed_at": "2026-10-15T18:00:00Z",
+      "published_at": "2026-10-18T10:00:00Z"
+    },
+    {
+      "id": 2,
+      "year": 2026,
+      "month": 12,
+      "status": "draft",
+      "created_by": 2,
+      "created_at": "2026-10-18T10:30:00Z",
+      "collection_opened_at": null,
+      "collection_closed_at": null,
+      "published_at": null
+    }
+  ],
+  "shift_requirements": [
+    {
+      "id": 1,
+      "schedule_id": 1,
+      "position_id": 1,
+      "work_date": "2026-11-02",
+      "start_time": "08:00:00",
+      "end_time": "16:00:00",
+      "required_workers": 2,
+      "note": "Zmiana poranna"
+    },
+    {
+      "id": 2,
+      "schedule_id": 1,
+      "position_id": 2,
+      "work_date": "2026-11-02",
+      "start_time": "10:00:00",
+      "end_time": "18:00:00",
+      "required_workers": 1,
+      "note": null
+    },
+    {
+      "id": 3,
+      "schedule_id": 1,
+      "position_id": 1,
+      "work_date": "2026-11-03",
+      "start_time": "08:00:00",
+      "end_time": "16:00:00",
+      "required_workers": 1,
+      "note": null
+    },
+    {
+      "id": 4,
+      "schedule_id": 1,
+      "position_id": 2,
+      "work_date": "2026-11-03",
+      "start_time": "12:00:00",
+      "end_time": "20:00:00",
+      "required_workers": 1,
+      "note": "Do obsadzenia"
+    }
+  ],
+  "availability_submissions": [
+    {
+      "id": 1,
+      "schedule_id": 1,
+      "user_id": 3,
+      "submitted_at": "2026-10-10T08:00:00Z"
+    },
+    {
+      "id": 2,
+      "schedule_id": 1,
+      "user_id": 4,
+      "submitted_at": "2026-10-11T09:00:00Z"
+    }
+  ],
+  "availability_entries": [
+    {
+      "id": 1,
+      "submission_id": 1,
+      "work_date": "2026-11-02",
+      "start_time": "08:00:00",
+      "end_time": "16:00:00",
+      "status": "available",
+      "note": null
+    },
+    {
+      "id": 2,
+      "submission_id": 1,
+      "work_date": "2026-11-03",
+      "start_time": "08:00:00",
+      "end_time": "16:00:00",
+      "status": "unavailable",
+      "note": "Zgłoszona niedostępność"
+    },
+    {
+      "id": 3,
+      "submission_id": 2,
+      "work_date": "2026-11-02",
+      "start_time": "09:00:00",
+      "end_time": "15:00:00",
+      "status": "available",
+      "note": "Dostępność tylko przez część zmiany"
+    },
+    {
+      "id": 4,
+      "submission_id": 2,
+      "work_date": "2026-11-03",
+      "start_time": "08:00:00",
+      "end_time": "16:00:00",
+      "status": "available",
+      "note": null
+    }
+  ],
+  "shift_assignments": [
+    {
+      "id": 1,
+      "shift_requirement_id": 1,
+      "user_id": 3,
+      "assigned_by": 2,
+      "assigned_at": "2026-10-17T10:00:00Z",
+      "warning_type": null,
+      "warning_acknowledged_at": null
+    },
+    {
+      "id": 2,
+      "shift_requirement_id": 1,
+      "user_id": 4,
+      "assigned_by": 2,
+      "assigned_at": "2026-10-17T10:05:00Z",
+      "warning_type": "unknown",
+      "warning_acknowledged_at": "2026-10-17T10:05:00Z"
+    },
+    {
+      "id": 3,
+      "shift_requirement_id": 2,
+      "user_id": 5,
+      "assigned_by": 2,
+      "assigned_at": "2026-10-17T10:10:00Z",
+      "warning_type": "unknown",
+      "warning_acknowledged_at": "2026-10-17T10:10:00Z"
+    },
+    {
+      "id": 4,
+      "shift_requirement_id": 3,
+      "user_id": 3,
+      "assigned_by": 2,
+      "assigned_at": "2026-10-17T10:15:00Z",
+      "warning_type": "unavailable",
+      "warning_acknowledged_at": "2026-10-17T10:15:00Z"
+    }
+  ]
+}
