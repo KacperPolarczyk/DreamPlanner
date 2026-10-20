@@ -101,7 +101,3 @@ Użytkownik → Frontend (React/Vite) → REST API (Backend) → PostgreSQL
 ```
 
 Frontend należy do warstwy prezentacji. Dostęp do danych odbywa się wyłącznie przez REST API.
-
-## Autor
-
-Mikołaj Suchodolski – Frontend Developer
