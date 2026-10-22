@@ -2,12 +2,12 @@
 
 from datetime import UTC, datetime
 
-from email_validator import EmailNotValidError, validate_email
 from sqlalchemy.orm import Session
 
 from src.auth.passwords import hash_password
 from src.users.models import User
 from src.users.repository import UserRepository
+from src.users.validation import validate_account_fields
 
 
 class BootstrapError(Exception):
@@ -29,18 +29,9 @@ def validate_bootstrap_account(email: str, full_name: str) -> tuple[str, str]:
         BootstrapValidationError: If an account field is invalid.
     """
     try:
-        normalized_email = validate_email(
-            email.strip(), check_deliverability=False
-        ).normalized
-    except EmailNotValidError:
-        raise BootstrapValidationError("Invalid email address.") from None
-    if len(normalized_email) > 255:
-        raise BootstrapValidationError("Email address is too long.")
-
-    normalized_name = full_name.strip()
-    if not normalized_name or len(normalized_name) > 150:
-        raise BootstrapValidationError("Full name must contain 1 to 150 characters.")
-    return normalized_email, normalized_name
+        return validate_account_fields(email, full_name)
+    except ValueError as exc:
+        raise BootstrapValidationError(str(exc)) from None
 
 
 def bootstrap_administrator(

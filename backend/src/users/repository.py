@@ -1,6 +1,6 @@
 """Persistence operations needed by the administrator bootstrap."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.users.models import Role, User
@@ -32,3 +32,41 @@ class UserRepository:
     def add(self, user: User) -> None:
         """Stage a user without committing the transaction."""
         self.session.add(user)
+
+    def get_role(self, code: str) -> Role | None:
+        """Find a role by its public code."""
+        return self.session.scalar(select(Role).where(Role.code == code))
+
+    def is_active_admin(self, user_id: int) -> bool:
+        """Check the trusted actor's current role and activation state."""
+        return (
+            self.session.scalar(
+                select(User.id)
+                .join(Role)
+                .where(
+                    User.id == user_id,
+                    Role.code == "admin",
+                    User.is_active.is_(True),
+                    User.activated_at.is_not(None),
+                )
+            )
+            is not None
+        )
+
+    def email_exists(self, email: str) -> bool:
+        """Check the case-insensitive email key before attempting insertion."""
+        return (
+            self.session.scalar(
+                select(User.id).where(func.lower(User.email) == email.lower()).limit(1)
+            )
+            is not None
+        )
+
+    def lock_user(self, user_id: int) -> User | None:
+        """Lock an account during token issuance or activation."""
+        return self.session.scalar(
+            select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )

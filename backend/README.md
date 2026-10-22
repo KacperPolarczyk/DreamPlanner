@@ -112,6 +112,22 @@ czasem aktywacji UTC i hashem Argon2id. Bootstrap odmawia utworzenia kolejnego
 konta, gdy istnieje już aktywny administrator. Nie uruchamiaj go na bazie
 developerskiej bez świadomej decyzji operatora.
 
+## Tworzenie i aktywacja kont
+
+Serwis `src.users.account_service` obsługuje tworzenie nieaktywnego konta
+`manager` lub `employee`, ponowne wydanie tokenu i pierwszą aktywację. Tworzenie
+i ponowne wydanie wymagają identyfikatora aktywnego administratora; nie mają
+jeszcze tras HTTP, ponieważ administracyjne RBAC powstanie później. Publiczna
+trasa aktywacji również czeka na uzgodniony, współdzielony limit prób.
+
+`create_user()` i `reissue_activation_token()` zwracają `IssuedActivation` dopiero
+po zatwierdzeniu transakcji. Zaufana warstwa API lub przyszły moduł powiadomień
+może wtedy jednorazowo odczytać `activation_token.get_secret_value()` i przekazać
+go użytkownikowi zaufanym kanałem. W bazie pozostaje tylko digest SHA-256 tokenu;
+serwis nie przechowuje ani nie loguje jawnej wartości. Nie zapisuj wyniku
+operacji w logach ani kolejce z trwałym payloadem, jeśli nie zapewnia ona
+odpowiedniej ochrony sekretów.
+
 Konfiguracja Alembic znajduje się w `alembic.ini` i `alembic/env.py`.
 Uruchamiaj polecenia Alembic z katalogu `backend/`, po ustawieniu
 `MIGRATION_DATABASE_URL`. Moduł `src/core/models.py` jest miejscem na jawne
