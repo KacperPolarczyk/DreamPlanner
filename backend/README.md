@@ -84,6 +84,15 @@ i endpoint health działają bez skonfigurowanego lub uruchomionego PostgreSQL.
 `get_session()` udostępnia jedną sesję w żądaniu i zamyka ją po zakończeniu;
 serwis zapisujący odpowiada za `commit()` oraz `rollback()` przy błędzie.
 
+Test pierwszej migracji wymaga osobnej, pustej i jednorazowej lokalnej bazy
+PostgreSQL z uprawnieniami obu kont jak w `docker/init-roles.sh`. Ustaw
+`TEST_MIGRATION_DATABASE_URL` oraz `TEST_DATABASE_URL` na tę samą bazę, której
+nazwa zaczyna się od `dreamplanner_test_`, i uruchom
+`uv run pytest tests/integration/test_domain_migration.py -v`. Test odmawia
+pracy na bazie wskazanej przez zwykłe URL developerskie. W bazie testowej
+wykonuje upgrade, sprawdzenia i downgrade; po teście usuń jednorazową bazę.
+Bez tych dwóch zmiennych zwykłe `uv run pytest` pomija test migracji.
+
 Konfiguracja Alembic znajduje się w `alembic.ini` i `alembic/env.py`.
 Uruchamiaj polecenia Alembic z katalogu `backend/`, po ustawieniu
 `MIGRATION_DATABASE_URL`. Moduł `src/core/models.py` jest miejscem na jawne
