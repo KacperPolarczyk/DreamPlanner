@@ -1,6 +1,7 @@
 """Import feature ORM models here as they are added for Alembic discovery."""
 
 from src.assignments.models import ShiftAssignment
+from src.auth.models import AccountActionToken, AuthSession, RefreshToken
 from src.availability.models import AvailabilityEntry, AvailabilitySubmission
 from src.core.database import Base
 from src.positions.models import Position
@@ -17,4 +18,7 @@ __all__ = [
     "AvailabilitySubmission",
     "AvailabilityEntry",
     "ShiftAssignment",
+    "AuthSession",
+    "RefreshToken",
+    "AccountActionToken",
 ]

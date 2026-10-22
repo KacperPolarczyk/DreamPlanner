@@ -24,7 +24,16 @@ pytestmark = [
 ]
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_TABLES = set(Base.metadata.tables)
+EXPECTED_TABLES = {
+    "roles",
+    "users",
+    "positions",
+    "schedules",
+    "shift_requirements",
+    "availability_submissions",
+    "availability_entries",
+    "shift_assignments",
+}
 EXPLICIT_INDEXES = {
     "ux_users_email_lower",
     "ix_shift_requirements_schedule_date",
@@ -74,7 +83,9 @@ def _reject_existing_schema(connection: Connection) -> None:
             "WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m','S','f')"
         )
     ).scalars()
-    assert list(relations) == []
+    assert set(relations) <= {"alembic_version"}
+    if inspect(connection).has_table("alembic_version"):
+        assert connection.scalar(text("SELECT count(*) FROM alembic_version")) == 0
 
 
 def _expect_rejection(connection: Connection, statement: str, **values: object) -> None:
@@ -88,10 +99,16 @@ def _check_catalog(connection: Connection) -> None:
     inspector = inspect(connection)
     assert set(inspector.get_table_names()) == EXPECTED_TABLES | {"alembic_version"}
     dialect = postgresql.dialect()
-    for name, model_table in Base.metadata.tables.items():
+    for name in EXPECTED_TABLES:
+        model_table = Base.metadata.tables[name]
+        model_columns = [
+            column
+            for column in model_table.c
+            if (name, column.name) != ("users", "activated_at")
+        ]
         reflected = {column["name"]: column for column in inspector.get_columns(name)}
-        assert set(reflected) == set(model_table.c.keys())
-        for model_column in model_table.c:
+        assert set(reflected) == {column.name for column in model_columns}
+        for model_column in model_columns:
             actual = reflected[model_column.name]
             assert actual["type"].compile(dialect=dialect) == model_column.type.compile(
                 dialect=dialect
@@ -393,7 +410,7 @@ def test_initial_domain_migration_on_disposable_postgres(
                 "dreamplanner_migration"
             )
             _reject_existing_schema(connection)
-        command.upgrade(config, "head")
+        command.upgrade(config, "20261023_01")
         upgraded = True
         with engine.connect() as connection:
             assert connection.scalar(

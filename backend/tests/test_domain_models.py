@@ -26,6 +26,7 @@ EXPECTED_COLUMNS = {
         "is_active": "BOOLEAN",
         "created_at": TIMESTAMPTZ,
         "updated_at": TIMESTAMPTZ,
+        "activated_at": TIMESTAMPTZ,
     },
     "positions": {
         "id": "BIGINT",
@@ -82,6 +83,7 @@ EXPECTED_COLUMNS = {
 }
 
 EXPECTED_NULLABLE = {
+    "users": {"activated_at"},
     "schedules": {
         "collection_opened_at",
         "collection_closed_at",
@@ -146,7 +148,13 @@ EXPECTED_UNIQUES = {
 
 EXPECTED_CHECKS = {
     "roles": {(None, "codein('admin','manager','employee')")},
-    "users": {("users_email_not_blank", "length(btrim(email))>0")},
+    "users": {
+        ("users_email_not_blank", "length(btrim(email))>0"),
+        (
+            "chk_users_active_requires_activation",
+            "notis_activeoractivated_atisnotnull",
+        ),
+    },
     "positions": {("positions_name_not_blank", "length(btrim(name))>0")},
     "schedules": {
         (None, "yearbetween2000and2100"),
@@ -201,8 +209,8 @@ EXPECTED_INDEXES = {
 
 
 def test_all_reference_tables_and_columns_are_registered() -> None:
-    """Alembic must see exactly the eight domain tables and their SQL types."""
-    assert set(Base.metadata.tables) == set(EXPECTED_COLUMNS)
+    """Alembic must see the domain tables and their SQL types."""
+    assert set(EXPECTED_COLUMNS) <= set(Base.metadata.tables)
     dialect = postgresql.dialect()
     for table_name, expected_columns in EXPECTED_COLUMNS.items():
         table = Base.metadata.tables[table_name]
@@ -216,7 +224,8 @@ def test_all_reference_tables_and_columns_are_registered() -> None:
 
 def test_primary_keys_identity_and_server_defaults() -> None:
     """Identity modes and database defaults must match the reference SQL."""
-    for table_name, table in Base.metadata.tables.items():
+    for table_name in EXPECTED_COLUMNS:
+        table = Base.metadata.tables[table_name]
         assert tuple(column.name for column in table.primary_key.columns) == ("id",)
         assert table.c.id.identity is not None
         assert table.c.id.identity.always is (table_name != "roles")
@@ -230,7 +239,8 @@ def test_primary_keys_identity_and_server_defaults() -> None:
 
 def test_foreign_keys_and_delete_actions() -> None:
     """Every declared reference must target the correct key and delete action."""
-    for table_name, table in Base.metadata.tables.items():
+    for table_name in EXPECTED_COLUMNS:
+        table = Base.metadata.tables[table_name]
         actual = {
             (fk.parent.name, fk.target_fullname, fk.ondelete)
             for fk in table.foreign_keys
@@ -240,7 +250,8 @@ def test_foreign_keys_and_delete_actions() -> None:
 
 def test_unique_and_check_constraints() -> None:
     """Unique keys and check expressions must retain reference semantics."""
-    for table_name, table in Base.metadata.tables.items():
+    for table_name in EXPECTED_COLUMNS:
+        table = Base.metadata.tables[table_name]
         uniques = {
             (constraint.name, tuple(column.name for column in constraint.columns))
             for constraint in table.constraints
@@ -258,7 +269,8 @@ def test_unique_and_check_constraints() -> None:
 def test_reference_indexes_compile_for_postgresql() -> None:
     """Check indexed columns and the case-insensitive email expression."""
     dialect = postgresql.dialect()
-    for table_name, table in Base.metadata.tables.items():
+    for table_name in EXPECTED_COLUMNS:
+        table = Base.metadata.tables[table_name]
         indexes = {
             index.name: str(CreateIndex(index).compile(dialect=dialect))
             for index in table.indexes

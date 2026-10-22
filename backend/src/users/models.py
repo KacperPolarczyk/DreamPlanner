@@ -42,6 +42,10 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint("length(btrim(email)) > 0", name="users_email_not_blank"),
+        CheckConstraint(
+            "NOT is_active OR activated_at IS NOT NULL",
+            name="chk_users_active_requires_activation",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
@@ -60,6 +64,7 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     role: Mapped[Role] = relationship()
 
