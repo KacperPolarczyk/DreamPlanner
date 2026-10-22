@@ -24,12 +24,60 @@ Plik `.env` nie powinien trafić do repozytorium.
 
 ## PostgreSQL i migracje
 
+Lokalny PostgreSQL uruchamia `compose.yaml`. Pracując bezpośrednio w WSL, wykonaj
+poniższe polecenia z katalogu `backend/`:
+
+1. Skopiuj `.env.example` do `.env`. Ustaw **trzy różne lokalne hasła**:
+   `POSTGRES_SUPERUSER_PASSWORD`, `POSTGRES_APP_PASSWORD` i
+   `POSTGRES_MIGRATION_PASSWORD`. Wstaw te same hasła aplikacyjne i migracyjne
+   odpowiednio do `DATABASE_URL` i `MIGRATION_DATABASE_URL`. Jeśli hasło zawiera
+   znaki specjalne URL, zakoduj je procentowo w URL. Plik `.env` jest ignorowany
+   przez Git.
+2. W razie zajętego portu `5432`, ustaw `POSTGRES_HOST_PORT` na wolny port i
+   zmień ten port w obu URL. Adres `127.0.0.1` w URL oznacza usługę dostępną
+   z WSL przez port hosta.
+3. Sprawdź konfigurację i uruchom tylko lokalną usługę PostgreSQL:
+
+   ```sh
+   docker compose config --quiet
+   docker compose up -d --wait postgres
+   ```
+
+4. Sprawdź oba połączenia oraz uprawnienia:
+
+   ```sh
+   RUN_DB_INTEGRATION=1 uv run pytest -m integration -v
+   ```
+
+5. Zatrzymaj usługę bez usuwania wolumenu:
+
+   ```sh
+   docker compose stop postgres
+   ```
+
+Ponowny start: `docker compose start postgres`. Zwykłe `uv run pytest -v`
+pomija testy integracyjne, więc działa także bez PostgreSQL.
+
+Obraz PostgreSQL ma ustaloną wersję `16.15-bookworm`, a port kontenera `5432`
+jest publikowany wyłącznie na `127.0.0.1:${POSTGRES_HOST_PORT}`. Dane przechowuje
+nazwany wolumen `postgres_data`; zatrzymanie kontenera ich nie usuwa.
+
+Przy **pierwszym uruchomieniu pustego wolumenu** obraz tworzy bazę z
+`POSTGRES_DB` i konto administracyjne z `POSTGRES_USER`. Następnie
+`docker/init-roles.sh` tworzy `dreamplanner_app` i `dreamplanner_migration`.
+Konto aplikacyjne ma dostęp do schematu `public` oraz prawa odczytu i zapisu do
+tabel i sekwencji utworzonych później przez konto migracyjne. Konto migracyjne
+może tworzyć obiekty w `public`; konto aplikacyjne nie może. Skrypt nie tworzy
+tabel biznesowych. Zmiana haseł w `.env` przy istniejącym wolumenie **nie zmienia**
+haseł zapisanych w PostgreSQL; skrypty inicjalizacyjne nie uruchamiają się
+ponownie dla istniejących danych. Nie usuwaj wolumenu w celu ponownej
+inicjalizacji; istniejące konto trzeba zaktualizować świadomie w bazie.
+
 `DATABASE_URL` wskazuje konto aplikacyjne, a `MIGRATION_DATABASE_URL` osobne
-konto z uprawnieniami do zmian schematu. Oba URL używają sterownika Psycopg 3:
-`postgresql+psycopg://użytkownik:hasło@host:5432/dreamplanner`.
-Przykłady lokalnych wartości są w `.env.example`; zastąp hasła i konta
-rzeczywistymi lokalnymi danymi. Dla Azure zachowaj TLS `verify-full` i
-zaufany certyfikat CA zgodnie z dokumentacją infrastruktury.
+konto migracyjne. Oba URL używają sterownika Psycopg 3, np.
+`postgresql+psycopg://dreamplanner_app:hasło@127.0.0.1:5432/dreamplanner`.
+Przykłady są w `.env.example`. Dla Azure zachowaj TLS `verify-full` i zaufany
+certyfikat CA zgodnie z dokumentacją infrastruktury.
 
 Silnik i fabryka sesji powstają dopiero przy pierwszym użyciu bazy. Import API
 i endpoint health działają bez skonfigurowanego lub uruchomionego PostgreSQL.

@@ -60,6 +60,7 @@ def test_missing_database_url_fails_only_when_session_is_needed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(database, "Settings", lambda: Settings(_env_file=None))
     database.get_engine.cache_clear()
 
     with pytest.raises(ValueError, match="DATABASE_URL must be configured"):
