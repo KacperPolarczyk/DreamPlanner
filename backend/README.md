@@ -97,6 +97,21 @@ Druga migracja odmawia upgrade, jeśli tabela `users` zawiera konta. Takie
 środowisko wymaga przed migracją przeglądu stanu aktywacji zgodnie z
 `AUTH_DESIGN.md`; migracja nie przypisuje kontom automatycznej daty aktywacji.
 
+## Pierwszy administrator
+
+Po wykonaniu migracji i skonfigurowaniu `DATABASE_URL` uruchom z katalogu
+`backend/` w zaufanym terminalu:
+
+```sh
+uv run python -m src.users.bootstrap_admin --email admin@example.com --full-name "Anna Nowak"
+```
+
+Polecenie dwukrotnie pobiera hasło bez wyświetlania go w terminalu. Nie podawaj
+hasła jako argumentu ani przez plik z poleceniami. Konto powstaje aktywne, z
+czasem aktywacji UTC i hashem Argon2id. Bootstrap odmawia utworzenia kolejnego
+konta, gdy istnieje już aktywny administrator. Nie uruchamiaj go na bazie
+developerskiej bez świadomej decyzji operatora.
+
 Konfiguracja Alembic znajduje się w `alembic.ini` i `alembic/env.py`.
 Uruchamiaj polecenia Alembic z katalogu `backend/`, po ustawieniu
 `MIGRATION_DATABASE_URL`. Moduł `src/core/models.py` jest miejscem na jawne

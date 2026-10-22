@@ -82,13 +82,12 @@ nie ujawnia, czy konto lub token istnieje.
 
 Pierwszy administrator powstaje przez kontrolowane polecenie bootstrap
 uruchomione przez zaufanego operatora z dostępem do bazy, bez publicznego
-endpointu. Polecenie zakłada nieaktywne konto `admin`, wydaje token jak wyżej
-i pokazuje go tylko raz w zaufanym terminalu. Musi odmawiać przypadkowego
-ponownego utworzenia pierwszego administratora, jeśli konto `admin` już
-istnieje; kontrola i zapis muszą być atomowe. Powtórne wydanie tokenu to
-osobna, kontrolowana operacja. Operator przekazuje token przyszłemu
-administratorowi, który sam wybiera hasło. Sam token nie może pojawić się w
-historii poleceń, logach procesu ani artefaktach CI.
+endpointu. Polecenie pobiera hasło interaktywnie przez `getpass` z potwierdzeniem,
+zapisuje jego hash Argon2id i zakłada aktywne konto `admin` z `activated_at`
+ustawionym na bieżący czas UTC. Hasło nie jest argumentem CLI ani treścią
+komunikatu. Kontrola istnienia aktywnego administratora i zapis muszą być
+atomowe; polecenie odmawia utworzenia kolejnego konta, gdy taki administrator
+już istnieje. Bootstrap nie wydaje tokenu aktywacyjnego.
 
 ## Hasła i ochrona logowania
 
