@@ -16,8 +16,14 @@ from src.positions.schemas import (
     CreatePositionInput,
     PositionListResponse,
     PositionResponse,
+    RenamePositionInput,
 )
-from src.positions.service import PositionNameConflict, create_position
+from src.positions.service import (
+    PositionNameConflict,
+    PositionNotFound,
+    create_position,
+    rename_position,
+)
 
 router = APIRouter(prefix="/positions", tags=["positions"])
 SessionDependency = Annotated[Session, Depends(get_session)]
@@ -187,5 +193,54 @@ def read_position(
         raise AuthHttpError(
             404, "about:blank", "Nie znaleziono stanowiska", "Stanowisko nie istnieje."
         )
+    response.headers["Cache-Control"] = "no-store"
+    return _public_position(position)
+
+
+@router.patch(
+    "/{position_id}",
+    response_model=PositionResponse,
+    summary="Zmień nazwę stanowiska",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `admin`. Przyjmuje wyłącznie "
+        "`name`; po obcięciu brzegowych białych znaków nazwa musi mieć "
+        "1–120 znaków. Unikalność jest wrażliwa na wielkość liter i obejmuje "
+        "stanowiska nieaktywne. Operacja zachowuje `is_active`."
+    ),
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required"),
+        404: _problem_response("Position not found"),
+        409: _problem_response("position-name-conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def update_position_name(
+    position_id: PositionIdPath,
+    data: RenamePositionInput,
+    response: Response,
+    identity: AdminIdentity,
+    session: SessionDependency,
+) -> PositionResponse:
+    """Rename an existing position without changing its activity state."""
+    parsed_id = int(position_id)
+    if parsed_id > MAX_BIGINT:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("path", "position_id")}]
+        )
+    try:
+        position = rename_position(session, parsed_id, data.name)
+    except PositionNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono stanowiska", "Stanowisko nie istnieje."
+        ) from None
+    except PositionNameConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:position-name-conflict",
+            "Nazwa stanowiska jest już zajęta",
+            "Stanowisko o tej nazwie już istnieje.",
+        ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_position(position)

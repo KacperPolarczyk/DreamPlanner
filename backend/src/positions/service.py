@@ -1,4 +1,4 @@
-"""Position creation workflow and its expected conflict."""
+"""Position writing workflows and their expected conflicts."""
 
 import sqlite3
 
@@ -11,6 +11,10 @@ from src.positions.repository import PositionRepository
 
 class PositionNameConflict(Exception):
     """The exact name is already used by an active or inactive position."""
+
+
+class PositionNotFound(Exception):
+    """The requested position does not exist."""
 
 
 def _name_conflict(exc: IntegrityError) -> bool:
@@ -41,6 +45,32 @@ def create_position(session: Session, name: str) -> Position:
     try:
         position = Position(name=name, is_active=True)
         PositionRepository(session).add(position)
+        session.flush()
+        session.commit()
+        return position
+    except IntegrityError as exc:
+        session.rollback()
+        if _name_conflict(exc):
+            raise PositionNameConflict("Position name is already in use.") from None
+        raise
+    except Exception:
+        session.rollback()
+        raise
+
+
+def rename_position(session: Session, position_id: int, name: str) -> Position:
+    """Lock and rename a position in one committed transaction.
+
+    Raises:
+        PositionNotFound: If the position does not exist.
+        PositionNameConflict: If another position owns the exact name.
+        IntegrityError: If a different database constraint fails.
+    """
+    try:
+        position = PositionRepository(session).get_by_id_for_update(position_id)
+        if position is None:
+            raise PositionNotFound
+        position.name = name
         session.flush()
         session.commit()
         return position

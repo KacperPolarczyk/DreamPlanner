@@ -24,6 +24,10 @@ class CreatePositionInput(BaseModel):
         return normalized
 
 
+class RenamePositionInput(CreatePositionInput):
+    """An administrator's request to replace a position's name."""
+
+
 class PositionResponse(BaseModel):
     """The public fields of one position."""
 

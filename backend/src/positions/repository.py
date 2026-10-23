@@ -16,6 +16,15 @@ class PositionRepository:
         """Return a position regardless of its active state."""
         return self.session.get(Position, position_id)
 
+    def get_by_id_for_update(self, position_id: int) -> Position | None:
+        """Lock one position until the current transaction ends."""
+        return self.session.scalar(
+            select(Position)
+            .where(Position.id == position_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
     def add(self, position: Position) -> None:
         """Stage a new position without committing the transaction."""
         self.session.add(position)
