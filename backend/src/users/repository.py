@@ -1,6 +1,6 @@
 """Persistence operations for user accounts and roles."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from src.users.models import Role, User
@@ -76,6 +76,58 @@ class UserRepository:
             .where(User.id == user_id)
             .execution_options(populate_existing=True)
         )
+
+    def list_users(
+        self,
+        *,
+        role: str | None,
+        is_active: bool | None,
+        activated: bool | None,
+        query: str | None,
+        limit: int,
+        offset: int,
+        sort: str,
+    ) -> tuple[list[User], int]:
+        """Return one filtered page and its count before pagination."""
+        filters = []
+        if role is not None:
+            filters.append(Role.code == role)
+        if is_active is not None:
+            filters.append(User.is_active.is_(is_active))
+        if activated is not None:
+            filters.append(
+                User.activated_at.is_not(None)
+                if activated
+                else User.activated_at.is_(None)
+            )
+        if query is not None:
+            search = query.lower()
+            filters.append(
+                or_(
+                    func.lower(User.email).contains(search, autoescape=True),
+                    func.lower(User.full_name).contains(search, autoescape=True),
+                )
+            )
+
+        total = self.session.scalar(
+            select(func.count()).select_from(User).join(Role).where(*filters)
+        )
+        sort_column = {
+            "full_name": User.full_name,
+            "email": User.email,
+            "created_at": User.created_at,
+        }[sort.removeprefix("-")]
+        order = sort_column.desc() if sort.startswith("-") else sort_column.asc()
+        users = self.session.scalars(
+            select(User)
+            .join(Role)
+            .options(joinedload(User.role))
+            .where(*filters)
+            .order_by(order, User.id.asc())
+            .limit(limit)
+            .offset(offset)
+        ).all()
+        return list(users), total
 
     def lock_user(self, user_id: int) -> User | None:
         """Lock an account during token issuance or activation."""

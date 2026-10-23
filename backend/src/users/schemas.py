@@ -38,7 +38,7 @@ class IssuedActivation(BaseModel):
 
 
 class UserProfile(BaseModel):
-    """Public account fields returned by authenticated profile reads."""
+    """Public account fields returned by authenticated reads."""
 
     id: str
     email: str
@@ -48,6 +48,15 @@ class UserProfile(BaseModel):
     activated_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class UserListResponse(BaseModel):
+    """A page of public accounts and the unpaginated filtered count."""
+
+    items: list[UserProfile]
+    limit: int
+    offset: int
+    total: int
 
 
 class CreatedUserResponse(UserProfile):

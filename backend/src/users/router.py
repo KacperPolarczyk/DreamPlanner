@@ -1,8 +1,8 @@
-"""HTTP endpoints for account profile and admin activation workflows."""
+"""HTTP endpoints for account reads and admin activation workflows."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Path, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
@@ -24,12 +24,17 @@ from src.users.schemas import (
     ActivationTokenResponse,
     CreatedUserResponse,
     CreateUserInput,
+    UserListResponse,
     UserProfile,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 AdminIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin"))]
+UserIdPath = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
+SortField = Literal[
+    "full_name", "-full_name", "email", "-email", "created_at", "-created_at"
+]
 
 
 def _problem_response(description: str) -> dict[str, object]:
@@ -61,6 +66,16 @@ def _public_user(user: User) -> UserProfile:
     )
 
 
+def _parse_user_id(user_id: str) -> int:
+    """Validate a decimal path identifier within PostgreSQL BIGINT range."""
+    parsed_id = int(user_id)
+    if parsed_id > 9223372036854775807:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("path", "user_id")}]
+        )
+    return parsed_id
+
+
 @router.get(
     "/me",
     response_model=UserProfile,
@@ -88,6 +103,84 @@ def read_current_user(
             "Brak uwierzytelnienia",
             "Nieprawidłowe uwierzytelnienie.",
             bearer=True,
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return _public_user(user)
+
+
+@router.get(
+    "",
+    response_model=UserListResponse,
+    summary="Pobierz administracyjną listę kont",
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required"),
+        422: _problem_response("validation-error"),
+    },
+)
+def list_accounts(
+    request: Request,
+    response: Response,
+    identity: AdminIdentity,
+    session: SessionDependency,
+    role: Literal["admin", "manager", "employee"] | None = None,
+    is_active: bool | None = None,
+    activated: bool | None = None,
+    q: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0, le=9223372036854775807)] = 0,
+    sort: SortField = "full_name",
+) -> UserListResponse:
+    """List accounts using only the approved filters and public fields."""
+    allowed = {"role", "is_active", "activated", "q", "limit", "offset", "sort"}
+    unknown = set(request.query_params) - allowed
+    if unknown:
+        raise RequestValidationError(
+            [
+                {"type": "extra_forbidden", "loc": ("query", key)}
+                for key in sorted(unknown)
+            ]
+        )
+    users, total = UserRepository(session).list_users(
+        role=role,
+        is_active=is_active,
+        activated=activated,
+        query=q,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return UserListResponse(
+        items=[_public_user(user) for user in users],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )
+
+
+@router.get(
+    "/{user_id}",
+    response_model=UserProfile,
+    summary="Pobierz administracyjne szczegóły konta",
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required"),
+        404: _problem_response("Account not found"),
+        422: _problem_response("validation-error"),
+    },
+)
+def read_account(
+    user_id: UserIdPath,
+    response: Response,
+    identity: AdminIdentity,
+    session: SessionDependency,
+) -> UserProfile:
+    """Return one existing account without exposing stored secrets."""
+    user = UserRepository(session).get_by_id(_parse_user_id(user_id))
+    if user is None:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono konta", "Konto nie istnieje."
         )
     response.headers["Cache-Control"] = "no-store"
     return _public_user(user)
@@ -149,17 +242,13 @@ def create_account(
     },
 )
 def reissue_activation(
-    user_id: Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)],
+    user_id: UserIdPath,
     response: Response,
     identity: AdminIdentity,
     session: SessionDependency,
 ) -> ActivationTokenResponse:
     """Replace a pending account's token after administrator authorization."""
-    parsed_id = int(user_id)
-    if parsed_id > 9223372036854775807:
-        raise RequestValidationError(
-            [{"type": "value_error", "loc": ("path", "user_id")}]
-        )
+    parsed_id = _parse_user_id(user_id)
     try:
         issued = reissue_activation_token(session, identity.user_id, parsed_id)
     except AdministratorRequired:
