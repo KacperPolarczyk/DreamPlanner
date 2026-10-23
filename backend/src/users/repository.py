@@ -1,7 +1,7 @@
-"""Persistence operations needed by the administrator bootstrap."""
+"""Persistence operations for user accounts and roles."""
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from src.users.models import Role, User
 
@@ -66,6 +66,15 @@ class UserRepository:
         """Find an account by its normalized, case-insensitive email key."""
         return self.session.scalar(
             select(User).where(func.lower(User.email) == email.lower())
+        )
+
+    def get_by_id(self, user_id: int) -> User | None:
+        """Read fresh account and role data for the authenticated profile."""
+        return self.session.scalar(
+            select(User)
+            .options(joinedload(User.role))
+            .where(User.id == user_id)
+            .execution_options(populate_existing=True)
         )
 
     def lock_user(self, user_id: int) -> User | None:

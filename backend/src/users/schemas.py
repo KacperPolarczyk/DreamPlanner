@@ -35,3 +35,16 @@ class IssuedActivation(BaseModel):
     user_id: int
     activation_token: SecretStr
     expires_at: datetime
+
+
+class UserProfile(BaseModel):
+    """Public account fields returned by authenticated profile reads."""
+
+    id: str
+    email: str
+    full_name: str
+    role: Literal["admin", "manager", "employee"]
+    is_active: bool
+    activated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
