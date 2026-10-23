@@ -22,6 +22,27 @@ danymi do automatycznego importu.
   testów.
 - REST API używa prefiksu `/api/v1`. Kontrakt endpointów powstanie osobno.
 
+## Lokalne limity prób w MVP
+
+Lokalne MVP zakłada **jedną replikę FastAPI i jeden worker Uvicorn**. SlowAPI
+używa wyłącznie magazynu `memory://` i strategii moving window. Limity
+logowania wynoszą 20 żądań na IP w 5 minut oraz 10 na znormalizowany e-mail
+w 15 minut; odnowienia 60 na IP w minutę oraz 10 na znaną sesję w minutę;
+aktywacji 20 na IP w 15 minut oraz 5 na znane konto w godzinę. Próby
+nieudane również zużywają limit. Limit IP obejmuje także niepoprawny JSON;
+drugi licznik wymaga możliwego do odczytania e-maila lub tokenu.
+
+Liczniki należą do procesu, zerują się po jego restarcie i nie są
+współdzielone między workerami ani replikami. Nie ma automatycznego fallbacku
+na pamięć po błędzie konfiguracji magazynu. Przed skalowaniem lub wdrożeniem
+na Azure wymagany jest ponowny przegląd rate limitingu. To opis założeń MVP,
+nie istniejącego wdrożenia Azure.
+
+Klucz IP pochodzi z `request.client.host`. Aplikacja nie odczytuje samodzielnie
+`X-Forwarded-For`; Uvicorn może przyjąć nagłówki proxy tylko od adresów
+jawnie wskazanych przez `--forwarded-allow-ips`. Nie używamy `*` jako listy
+zaufanych proxy. Sekrety i adresy hostingu nadal pochodzą z konfiguracji.
+
 Docelowy minimalny układ, tworzony stopniowo wraz z uzgodnionymi funkcjami:
 
 ```text

@@ -6,7 +6,7 @@ Z katalogu `backend/`:
 
 ```sh
 uv sync
-uv run uvicorn src.main:app --reload
+uv run uvicorn src.main:app --host 127.0.0.1 --port 8000 --workers 1 --no-proxy-headers
 ```
 
 API: `http://localhost:8000/api/v1/health` (`{"status":"ok"}`).
@@ -18,9 +18,34 @@ Opcjonalnie skopiuj `.env.example` do `.env` i ustaw `APP_NAME` oraz
 `CORS_ORIGINS='["https://app.example.com"]'`. W produkcji zastąp lokalne
 wartości rzeczywistymi adresami frontendu; nie używaj `*`.
 CORS dopuszcza metody `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS` oraz
-nagłówki `Authorization` i `Content-Type`. CORS nie zastępuje walidacji `Origin`
-w przyszłych operacjach wykorzystujących refresh cookie.
+nagłówki `Authorization` i `Content-Type`. Login, refresh i wylogowanie
+sprawdzają `Origin` względem tej samej jawnej listy.
 Plik `.env` nie powinien trafić do repozytorium.
+
+## Uwierzytelnianie i limity prób
+
+Przed użyciem endpointów auth ustaw `JWT_SIGNING_KEY_BASE64` na losowe co
+najmniej 32 bajty zakodowane base64 (np. wynik `openssl rand -base64 32`),
+`JWT_CURRENT_KID`, `JWT_ISSUER` i `JWT_AUDIENCE`. Brak klucza wyłącza
+logowanie i odnowienie bez wpływu na health. Podczas rotacji klucza ustaw też
+`JWT_PREVIOUS_SIGNING_KEY_BASE64` i `JWT_PREVIOUS_KID`, zachowując poprzednie
+ID. Nie zapisuj kluczy w repozytorium ani w logach.
+
+Lokalne HTTP używa cookie refresh `HttpOnly; SameSite=Lax` z wąską ścieżką
+`/api/v1/auth/sessions/current`. W produkcji ustaw `ENVIRONMENT=production`,
+`REFRESH_COOKIE_SECURE=true`, rzeczywiste originy HTTPS i właściwe ustawienia
+cookie dla topologii hostingu. Cookie pozostaje host-only. Access token trafia
+wyłącznie do JSON i powinien pozostać w pamięci klienta.
+
+Lokalne MVP wymaga jednej repliki i jednego workera. SlowAPI używa jawnego
+`memory://` bez fallbacku. Liczniki są lokalne dla procesu, zerują się po
+restarcie i nie są współdzielone między workerami ani replikami. Przed
+skalowaniem lub wdrożeniem na Azure trzeba ponownie ocenić rate limiting.
+
+Lokalnie uruchamiaj Uvicorn z `--no-proxy-headers`. Za zaufanym reverse proxy
+użyj `--proxy-headers --forwarded-allow-ips=<adresy-proxy>` z konkretnymi
+adresami lub sieciami; nie ustawiaj `*`. Limity IP korzystają z
+`request.client.host`, nie z samodzielnie odczytanego `X-Forwarded-For`.
 
 ## PostgreSQL i migracje
 

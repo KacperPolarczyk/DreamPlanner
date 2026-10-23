@@ -62,6 +62,12 @@ class UserRepository:
             is not None
         )
 
+    def get_by_email(self, email: str) -> User | None:
+        """Find an account by its normalized, case-insensitive email key."""
+        return self.session.scalar(
+            select(User).where(func.lower(User.email) == email.lower())
+        )
+
     def lock_user(self, user_id: int) -> User | None:
         """Lock an account during token issuance or activation."""
         return self.session.scalar(
