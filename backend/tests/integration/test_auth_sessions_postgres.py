@@ -7,21 +7,25 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
+from typing import Annotated
 from uuid import uuid4
 
 import pytest
 from alembic.config import Config
+from fastapi import Depends
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, inspect, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from alembic import command
+from src.auth.dependencies import require_roles
 from src.auth.jwt_codec import JwtCodec
 from src.auth.models import AccountActionToken, AuthSession, RefreshToken
 from src.auth.passwords import hash_password
 from src.auth.session_repository import AuthSessionRepository
 from src.auth.session_service import (
+    ActiveIdentity,
     InvalidCredentials,
     InvalidSession,
     login,
@@ -315,12 +319,43 @@ def test_session_lifecycle_on_disposable_postgres(
                 == before
             )
 
+        monkeypatch.setenv(
+            "JWT_SIGNING_KEY_BASE64",
+            base64.b64encode(codec.keys[codec.current_kid]).decode(),
+        )
+        monkeypatch.setenv("JWT_CURRENT_KID", codec.current_kid)
+        monkeypatch.setenv("JWT_ISSUER", codec.issuer)
+        monkeypatch.setenv("JWT_AUDIENCE", codec.audience)
+        rbac_app = create_app()
+
+        def rbac_session():
+            with factory() as session:
+                yield session
+
+        rbac_app.dependency_overrides[get_session] = rbac_session
+
+        @rbac_app.get("/test/rbac/manager")
+        def manager_only(
+            identity: Annotated[ActiveIdentity, Depends(require_roles("manager"))],
+        ) -> dict[str, str]:
+            return {"role": identity.role}
+
+        headers = {"Authorization": f"Bearer {rollback.access_token}"}
+        with TestClient(rbac_app) as rbac_client:
+            assert (
+                rbac_client.get("/test/rbac/manager", headers=headers).status_code
+                == 403
+            )
         with factory() as session:
             manager = session.scalar(select(Role).where(Role.code == "manager"))
             assert manager is not None
             user = session.get(User, user_id)
             user.role_id = manager.id
             session.commit()
+        with TestClient(rbac_app) as rbac_client:
+            updated_role = rbac_client.get("/test/rbac/manager", headers=headers)
+            assert updated_role.status_code == 200
+            assert updated_role.json() == {"role": "manager"}
         with factory() as session:
             assert (
                 validate_session(session, rollback.session_id, user_id).role
@@ -330,6 +365,10 @@ def test_session_lifecycle_on_disposable_postgres(
             user = session.get(User, user_id)
             user.is_active = False
             session.commit()
+        with TestClient(rbac_app) as rbac_client:
+            inactive_account = rbac_client.get("/test/rbac/manager", headers=headers)
+            assert inactive_account.status_code == 401
+            assert inactive_account.headers["www-authenticate"] == "Bearer"
         with factory() as session:
             with pytest.raises(InvalidSession):
                 validate_session(session, rollback.session_id, user_id)

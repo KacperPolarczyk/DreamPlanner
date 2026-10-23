@@ -6,23 +6,24 @@ from typing import Annotated
 from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
-from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 
-from src.auth.jwt_codec import InvalidAccessToken, JwtCodec
+from src.auth.dependencies import (
+    AuthHttpError,
+    CurrentIdentity,
+    require_codec,
+)
 from src.auth.rate_limits import AuthRateLimits, LimitStatus
 from src.auth.repository import ActionTokenRepository
 from src.auth.schemas import AccessTokenResponse, LoginInput, ProblemDetails
 from src.auth.session_repository import AuthSessionRepository
 from src.auth.session_service import (
-    ActiveIdentity,
     InvalidCredentials,
     InvalidSession,
     SessionGrant,
     login,
     refresh_session,
     revoke_session,
-    validate_session,
 )
 from src.auth.tokens import hash_action_token, hash_refresh_token
 from src.core.config import Settings
@@ -33,9 +34,6 @@ from src.users.validation import AccountValidationError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 SessionDependency = Annotated[Session, Depends(get_session)]
-bearer_scheme = HTTPBearer(
-    scheme_name="BearerAuth", bearerFormat="JWT", auto_error=False
-)
 
 
 def _problem_response(description: str) -> dict[str, object]:
@@ -48,41 +46,9 @@ def _problem_response(description: str) -> dict[str, object]:
     }
 
 
-class AuthHttpError(Exception):
-    """A safe problem response selected by the HTTP adapter."""
-
-    def __init__(
-        self,
-        status: int,
-        kind: str,
-        title: str,
-        detail: str,
-        *,
-        bearer: bool = False,
-    ) -> None:
-        self.status = status
-        self.kind = kind
-        self.title = title
-        self.detail = detail
-        self.bearer = bearer
-
-
 def _settings(request: Request) -> Settings:
     """Read the application's validated environment settings."""
     return request.app.state.settings
-
-
-def _codec(request: Request) -> JwtCodec:
-    """Require signing configuration without exposing configuration details."""
-    codec = request.app.state.jwt_codec
-    if codec is None:
-        raise AuthHttpError(
-            503,
-            "about:blank",
-            "Usługa niedostępna",
-            "Uwierzytelnianie jest niedostępne.",
-        )
-    return codec
 
 
 def _limiter(request: Request) -> AuthRateLimits:
@@ -143,31 +109,6 @@ def _grant_response(
     return response
 
 
-def _current_identity(request: Request, session: Session) -> ActiveIdentity:
-    """Authenticate a bearer access token against current database state."""
-    authorization = request.headers.get("authorization", "")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token or " " in token:
-        raise AuthHttpError(
-            401,
-            "about:blank",
-            "Brak uwierzytelnienia",
-            "Nieprawidłowe uwierzytelnienie.",
-            bearer=True,
-        )
-    try:
-        user_id, session_id = _codec(request).verify(token)
-        return validate_session(session, session_id, user_id)
-    except (InvalidAccessToken, InvalidSession):
-        raise AuthHttpError(
-            401,
-            "about:blank",
-            "Brak uwierzytelnienia",
-            "Nieprawidłowe uwierzytelnienie.",
-            bearer=True,
-        ) from None
-
-
 @router.post(
     "/sessions",
     response_model=AccessTokenResponse,
@@ -189,7 +130,10 @@ def create_session(
     _require_origin(request)
     try:
         grant = login(
-            session, data.email, data.password.get_secret_value(), _codec(request)
+            session,
+            data.email,
+            data.password.get_secret_value(),
+            require_codec(request),
         )
     except InvalidCredentials:
         raise AuthHttpError(
@@ -219,7 +163,7 @@ def renew_session(request: Request, session: SessionDependency) -> Response:
     limit_status = _limiter(request).check_identity(request, "refresh", key)
     _require_origin(request)
     try:
-        grant = refresh_session(session, token, _codec(request))
+        grant = refresh_session(session, token, require_codec(request))
     except InvalidSession:
         raise AuthHttpError(
             401,
@@ -233,16 +177,16 @@ def renew_session(request: Request, session: SessionDependency) -> Response:
 @router.delete(
     "/sessions/current",
     status_code=204,
-    dependencies=[Depends(bearer_scheme)],
+    dependencies=[Depends(_require_origin)],
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Origin denied"),
     },
 )
-def delete_session(request: Request, session: SessionDependency) -> Response:
+def delete_session(
+    request: Request, session: SessionDependency, identity: CurrentIdentity
+) -> Response:
     """Revoke the access token's current session and remove its cookie."""
-    _require_origin(request)
-    identity = _current_identity(request, session)
     try:
         revoke_session(session, identity.session_id, identity.user_id)
     except InvalidSession:

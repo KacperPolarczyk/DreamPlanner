@@ -6,9 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.api import api_router
+from src.auth.dependencies import AuthHttpError
 from src.auth.jwt_codec import JwtCodec
 from src.auth.rate_limits import AuthRateLimits, RateLimited
-from src.auth.router import AuthHttpError
 from src.core.config import Settings
 
 
