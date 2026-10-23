@@ -7,7 +7,7 @@ from src.positions.models import Position
 
 
 class PositionRepository:
-    """Read positions using one request-scoped database session."""
+    """Read and stage positions in one request-scoped database session."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -15,6 +15,10 @@ class PositionRepository:
     def get_by_id(self, position_id: int) -> Position | None:
         """Return a position regardless of its active state."""
         return self.session.get(Position, position_id)
+
+    def add(self, position: Position) -> None:
+        """Stage a new position without committing the transaction."""
+        self.session.add(position)
 
     def list_positions(
         self,

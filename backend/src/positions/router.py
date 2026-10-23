@@ -12,11 +12,17 @@ from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
 from src.positions.models import Position
 from src.positions.repository import PositionRepository
-from src.positions.schemas import PositionListResponse, PositionResponse
+from src.positions.schemas import (
+    CreatePositionInput,
+    PositionListResponse,
+    PositionResponse,
+)
+from src.positions.service import PositionNameConflict, create_position
 
 router = APIRouter(prefix="/positions", tags=["positions"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 ReadIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))]
+AdminIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin"))]
 PositionIdPath = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 SortField = Literal["name", "-name", "id", "-id"]
 MAX_BIGINT = 9223372036854775807
@@ -42,6 +48,45 @@ def _public_position(position: Position) -> PositionResponse:
     return PositionResponse(
         id=str(position.id), name=position.name, is_active=position.is_active
     )
+
+
+@router.post(
+    "",
+    status_code=201,
+    response_model=PositionResponse,
+    summary="Utwórz stanowisko",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `admin`. Nazwa po obcięciu białych "
+        "znaków brzegowych musi mieć 1–120 znaków. Unikalność nazwy jest "
+        "wrażliwa na wielkość liter i obejmuje stanowiska nieaktywne."
+    ),
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required"),
+        409: _problem_response("position-name-conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def create_new_position(
+    data: CreatePositionInput,
+    response: Response,
+    identity: AdminIdentity,
+    session: SessionDependency,
+) -> PositionResponse:
+    """Create an active position under the approved administrator role."""
+    try:
+        position = create_position(session, data.name)
+    except PositionNameConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:position-name-conflict",
+            "Nazwa stanowiska jest już zajęta",
+            "Stanowisko o tej nazwie już istnieje.",
+        ) from None
+    response.headers["Location"] = f"/api/v1/positions/{position.id}"
+    response.headers["Cache-Control"] = "no-store"
+    return _public_position(position)
 
 
 @router.get(

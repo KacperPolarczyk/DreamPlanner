@@ -227,10 +227,9 @@ def test_missing_position_returns_404_and_zero_is_not_found(positions_api) -> No
     assert leading_zero.json()["id"] == "10"
 
 
-def test_openapi_documents_only_two_secured_reads(positions_api) -> None:
+def test_openapi_documents_secured_reads(positions_api) -> None:
     app, _, _ = positions_api
     paths = app.openapi()["paths"]
-    assert "post" not in paths[PATH]
     for path, statuses, result in (
         (PATH, {"200", "401", "403", "422"}, "PositionListResponse"),
         (
@@ -240,7 +239,7 @@ def test_openapi_documents_only_two_secured_reads(positions_api) -> None:
         ),
     ):
         operation = paths[path]["get"]
-        assert set(paths[path]) == {"get"}
+        assert "get" in paths[path]
         assert operation["security"] == [{"BearerAuth": []}]
         assert "`admin`" in operation["description"]
         assert "`manager`" in operation["description"]
