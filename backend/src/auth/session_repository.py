@@ -1,8 +1,9 @@
 """Persistence operations for browser sessions and refresh tokens."""
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from src.auth.models import AuthSession, RefreshToken
@@ -57,3 +58,11 @@ class AuthSessionRepository:
     def add_token(self, token: RefreshToken) -> None:
         """Stage the next token without committing."""
         self.session.add(token)
+
+    def revoke_user_sessions(self, user_id: int, now: datetime) -> None:
+        """Revoke every live session owned by one account in this transaction."""
+        self.session.execute(
+            update(AuthSession)
+            .where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )

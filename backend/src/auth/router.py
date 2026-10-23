@@ -8,10 +8,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
+from src.auth.cookies import clear_refresh_cookie
 from src.auth.dependencies import (
     AuthHttpError,
     CurrentIdentity,
     require_codec,
+    require_origin,
 )
 from src.auth.rate_limits import AuthRateLimits, LimitStatus
 from src.auth.repository import ActionTokenRepository
@@ -23,6 +25,7 @@ from src.auth.session_service import (
     SessionGrant,
     login,
     refresh_session,
+    revoke_all_sessions,
     revoke_session,
 )
 from src.auth.tokens import hash_action_token, hash_refresh_token
@@ -54,20 +57,6 @@ def _settings(request: Request) -> Settings:
 def _limiter(request: Request) -> AuthRateLimits:
     """Return this FastAPI application's isolated SlowAPI counters."""
     return request.app.state.auth_rate_limits
-
-
-def _require_origin(request: Request) -> None:
-    """Reject missing or unlisted browser origins before state changes."""
-    settings = _settings(request)
-    origin = request.headers.get("origin")
-    if (
-        origin is None
-        or origin not in settings.cors_origins
-        or (settings.environment == "production" and request.url.scheme != "https")
-    ):
-        raise AuthHttpError(
-            403, "about:blank", "Odmowa dostępu", "Niedozwolone żądanie."
-        )
 
 
 def _login_identity(email: str) -> str:
@@ -127,7 +116,7 @@ def create_session(
     limit_status = _limiter(request).check_identity(
         request, "login", _login_identity(data.email)
     )
-    _require_origin(request)
+    require_origin(request)
     try:
         grant = login(
             session,
@@ -161,7 +150,7 @@ def renew_session(request: Request, session: SessionDependency) -> Response:
     known_id = AuthSessionRepository(session).find_token_session_id(digest)
     key = _token_identity("session", digest, str(known_id) if known_id else None)
     limit_status = _limiter(request).check_identity(request, "refresh", key)
-    _require_origin(request)
+    require_origin(request)
     try:
         grant = refresh_session(session, token, require_codec(request))
     except InvalidSession:
@@ -177,7 +166,7 @@ def renew_session(request: Request, session: SessionDependency) -> Response:
 @router.delete(
     "/sessions/current",
     status_code=204,
-    dependencies=[Depends(_require_origin)],
+    dependencies=[Depends(require_origin)],
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Origin denied"),
@@ -199,13 +188,35 @@ def delete_session(
         ) from None
     settings = _settings(request)
     response = Response(status_code=204, headers={"Cache-Control": "no-store"})
-    response.delete_cookie(
-        settings.refresh_cookie_name,
-        path=settings.refresh_cookie_path,
-        secure=settings.refresh_cookie_secure,
-        httponly=True,
-        samesite=settings.refresh_cookie_samesite,
-    )
+    clear_refresh_cookie(response, settings)
+    return response
+
+
+@router.delete(
+    "/sessions",
+    status_code=204,
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Origin denied"),
+    },
+)
+def delete_all_sessions(
+    request: Request, session: SessionDependency, identity: CurrentIdentity
+) -> Response:
+    """Revoke all of the caller's sessions and expire their refresh cookie."""
+    require_origin(request)
+    try:
+        revoke_all_sessions(session, identity.user_id, identity.session_id)
+    except InvalidSession:
+        raise AuthHttpError(
+            401,
+            "about:blank",
+            "Brak uwierzytelnienia",
+            "Nieprawidłowe uwierzytelnienie.",
+            bearer=True,
+        ) from None
+    response = Response(status_code=204, headers={"Cache-Control": "no-store"})
+    clear_refresh_cookie(response, _settings(request))
     return response
 
 

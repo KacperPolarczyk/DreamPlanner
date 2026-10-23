@@ -57,6 +57,8 @@ def _active_user(user: User | None) -> bool:
 def login(session: Session, email: str, password: str, codec: JwtCodec) -> SessionGrant:
     """Verify credentials and create one independently revocable session.
 
+    Locking the account serializes login with password changes and global logout.
+
     Raises:
         InvalidCredentials: If the account cannot authenticate.
     """
@@ -67,7 +69,10 @@ def login(session: Session, email: str, password: str, codec: JwtCodec) -> Sessi
             ).normalized
         except EmailNotValidError:
             normalized = ""
-        user = UserRepository(session).get_by_email(normalized) if normalized else None
+        users = UserRepository(session)
+        user = users.get_by_email(normalized) if normalized else None
+        if user is not None:
+            user = users.lock_user(user.id)
         matches = verify_password(
             password, user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
         )
@@ -193,6 +198,47 @@ def revoke_session(session: Session, session_id: UUID, user_id: int) -> None:
         ):
             raise InvalidSession("Invalid session.")
         auth_session.revoked_at = now
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def lock_current_account(
+    session: Session, user_id: int, current_session_id: UUID
+) -> User:
+    """Lock the caller's active account and current session before a mutation.
+
+    Raises:
+        InvalidSession: If either record no longer permits an authenticated write.
+    """
+    user = UserRepository(session).lock_user(user_id)
+    if not _active_user(user):
+        raise InvalidSession("Invalid session.")
+    current = AuthSessionRepository(session).lock_session(current_session_id)
+    now = datetime.now(UTC)
+    if (
+        current is None
+        or current.user_id != user_id
+        or current.revoked_at is not None
+        or now >= current.idle_expires_at
+        or now >= current.absolute_expires_at
+    ):
+        raise InvalidSession("Invalid session.")
+    return user
+
+
+def revoke_all_sessions(
+    session: Session, user_id: int, current_session_id: UUID
+) -> None:
+    """Revoke all of the authenticated account's sessions in one transaction.
+
+    Raises:
+        InvalidSession: If the caller's account or session became invalid.
+    """
+    try:
+        lock_current_account(session, user_id, current_session_id)
+        AuthSessionRepository(session).revoke_user_sessions(user_id, datetime.now(UTC))
         session.commit()
     except Exception:
         session.rollback()

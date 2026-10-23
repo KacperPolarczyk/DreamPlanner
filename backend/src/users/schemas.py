@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from src.users.validation import validate_account_fields
 
@@ -27,6 +27,13 @@ class ActivateAccountInput(BaseModel):
 
     token: SecretStr
     new_password: SecretStr
+
+
+class ChangePasswordInput(BaseModel):
+    """Current credential and a nonempty replacement supplied by its owner."""
+
+    current_password: SecretStr
+    new_password: SecretStr = Field(min_length=1)
 
 
 class IssuedActivation(BaseModel):

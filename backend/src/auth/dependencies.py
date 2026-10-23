@@ -50,6 +50,20 @@ def require_codec(request: Request) -> JwtCodec:
     return codec
 
 
+def require_origin(request: Request) -> None:
+    """Reject state-changing browser requests from unlisted origins."""
+    settings = request.app.state.settings
+    origin = request.headers.get("origin")
+    if (
+        origin is None
+        or origin not in settings.cors_origins
+        or (settings.environment == "production" and request.url.scheme != "https")
+    ):
+        raise AuthHttpError(
+            403, "about:blank", "Odmowa dostępu", "Niedozwolone żądanie."
+        )
+
+
 def _unauthenticated() -> AuthHttpError:
     """Build the existing bearer challenge and safe problem detail."""
     return AuthHttpError(

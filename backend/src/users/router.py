@@ -1,4 +1,4 @@
-"""HTTP endpoints for account reads and admin activation workflows."""
+"""HTTP endpoints for account reads and account workflows."""
 
 from typing import Annotated, Literal
 
@@ -6,9 +6,16 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from src.auth.dependencies import AuthHttpError, CurrentIdentity, require_roles
+from src.auth.cookies import clear_refresh_cookie
+from src.auth.dependencies import (
+    AuthHttpError,
+    CurrentIdentity,
+    require_origin,
+    require_roles,
+)
+from src.auth.rate_limits import AuthRateLimits
 from src.auth.schemas import ProblemDetails
-from src.auth.session_service import ActiveIdentity
+from src.auth.session_service import ActiveIdentity, InvalidSession
 from src.core.database import get_session
 from src.users.account_service import (
     AccountNotFound,
@@ -19,9 +26,11 @@ from src.users.account_service import (
     reissue_activation_token,
 )
 from src.users.models import User
+from src.users.password_service import InvalidCurrentPassword, change_own_password
 from src.users.repository import UserRepository
 from src.users.schemas import (
     ActivationTokenResponse,
+    ChangePasswordInput,
     CreatedUserResponse,
     CreateUserInput,
     UserListResponse,
@@ -106,6 +115,61 @@ def read_current_user(
         )
     response.headers["Cache-Control"] = "no-store"
     return _public_user(user)
+
+
+@router.post(
+    "/me/password-change",
+    status_code=204,
+    summary="Zmień własne hasło",
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("invalid-current-password or Origin denied"),
+        422: _problem_response("validation-error"),
+        429: _problem_response("rate-limited"),
+    },
+)
+def change_current_password(
+    request: Request,
+    data: ChangePasswordInput,
+    identity: CurrentIdentity,
+    session: SessionDependency,
+) -> Response:
+    """Verify the existing password, replace it and end all sessions."""
+    limiter: AuthRateLimits = request.app.state.auth_rate_limits
+    limit_status = limiter.check_identity(
+        request, "password_change", f"user:{identity.user_id}"
+    )
+    require_origin(request)
+    try:
+        change_own_password(
+            session,
+            identity.user_id,
+            identity.session_id,
+            data.current_password.get_secret_value(),
+            data.new_password.get_secret_value(),
+        )
+    except InvalidCurrentPassword:
+        raise AuthHttpError(
+            403,
+            "urn:dreamplanner:problem:invalid-current-password",
+            "Nieprawidłowe obecne hasło",
+            "Nieprawidłowe obecne hasło.",
+        ) from None
+    except InvalidSession:
+        raise AuthHttpError(
+            401,
+            "about:blank",
+            "Brak uwierzytelnienia",
+            "Nieprawidłowe uwierzytelnienie.",
+            bearer=True,
+        ) from None
+    response = Response(
+        status_code=204,
+        headers={**limit_status.headers(), "Cache-Control": "no-store"},
+    )
+    clear_refresh_cookie(response, request.app.state.settings)
+    return response
 
 
 @router.get(
