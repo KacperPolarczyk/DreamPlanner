@@ -13,7 +13,7 @@ class UserRepository:
         self.session = session
 
     def lock_admin_role(self) -> Role | None:
-        """Lock the admin role row to serialize bootstrap attempts."""
+        """Serialize bootstrap and changes to active administrator membership."""
         return self.session.scalar(
             select(Role).where(Role.code == "admin").with_for_update()
         )
@@ -27,6 +27,16 @@ class UserRepository:
                 .limit(1)
             )
             is not None
+        )
+
+    def count_active_admins(self, role_id: int) -> int:
+        """Count active, first-activated administrators under the role lock."""
+        return self.session.scalar(
+            select(func.count(User.id)).where(
+                User.role_id == role_id,
+                User.is_active.is_(True),
+                User.activated_at.is_not(None),
+            )
         )
 
     def add(self, user: User) -> None:

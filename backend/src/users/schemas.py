@@ -36,6 +36,12 @@ class ChangePasswordInput(BaseModel):
     new_password: SecretStr = Field(min_length=1)
 
 
+class ChangeRoleInput(BaseModel):
+    """An administrator-selected role for an existing account."""
+
+    role: Literal["admin", "manager", "employee"]
+
+
 class IssuedActivation(BaseModel):
     """A token available once to a trusted delivery boundary after commit."""
 

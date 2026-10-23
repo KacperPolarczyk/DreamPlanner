@@ -1,15 +1,16 @@
 """Queries and writes for one-time account action tokens."""
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from src.auth.models import AccountActionToken
 
 
 class ActionTokenRepository:
-    """Access activation records using the operation's existing session."""
+    """Access account action tokens using the operation's existing session."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -47,4 +48,17 @@ class ActionTokenRepository:
                 AccountActionToken.revoked_at.is_(None),
             )
             .with_for_update()
+        )
+
+    def revoke_unused_password_resets(self, user_id: int, now: datetime) -> None:
+        """Revoke every unused password-reset token for one account."""
+        self.session.execute(
+            update(AccountActionToken)
+            .where(
+                AccountActionToken.user_id == user_id,
+                AccountActionToken.purpose == "password_reset",
+                AccountActionToken.used_at.is_(None),
+                AccountActionToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
         )

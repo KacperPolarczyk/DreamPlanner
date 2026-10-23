@@ -25,12 +25,19 @@ from src.users.account_service import (
     create_user,
     reissue_activation_token,
 )
+from src.users.admin_service import (
+    LastAdminConflict,
+    SelfActionForbidden,
+    change_role,
+    deactivate_account,
+)
 from src.users.models import User
 from src.users.password_service import InvalidCurrentPassword, change_own_password
 from src.users.repository import UserRepository
 from src.users.schemas import (
     ActivationTokenResponse,
     ChangePasswordInput,
+    ChangeRoleInput,
     CreatedUserResponse,
     CreateUserInput,
     UserListResponse,
@@ -246,6 +253,93 @@ def read_account(
         raise AuthHttpError(
             404, "about:blank", "Nie znaleziono konta", "Konto nie istnieje."
         )
+    response.headers["Cache-Control"] = "no-store"
+    return _public_user(user)
+
+
+@router.put(
+    "/{user_id}/role",
+    response_model=UserProfile,
+    summary="Zmień rolę konta",
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required or self-change forbidden"),
+        404: _problem_response("Account not found"),
+        409: _problem_response("last-admin-conflict"),
+        422: _problem_response("validation-error"),
+    },
+)
+def change_account_role(
+    user_id: UserIdPath,
+    data: ChangeRoleInput,
+    response: Response,
+    identity: AdminIdentity,
+    session: SessionDependency,
+) -> UserProfile:
+    """Change another user's role after service-side administrator checks."""
+    try:
+        user = change_role(
+            session, identity.user_id, _parse_user_id(user_id), data.role
+        )
+    except (AdministratorRequired, SelfActionForbidden):
+        raise _admin_required() from None
+    except AccountNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono konta", "Konto nie istnieje."
+        ) from None
+    except LastAdminConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:last-admin-conflict",
+            "Konflikt administratora",
+            "Operacja usunęłaby ostatniego aktywnego administratora.",
+        ) from None
+    response.headers["Cache-Control"] = "no-store"
+    return _public_user(user)
+
+
+@router.post(
+    "/{user_id}/deactivation",
+    response_model=UserProfile,
+    summary="Dezaktywuj konto",
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required or self-deactivation forbidden"),
+        404: _problem_response("Account not found"),
+        409: _problem_response("account-state-conflict or last-admin-conflict"),
+        422: _problem_response("validation-error"),
+    },
+)
+def deactivate_user(
+    user_id: UserIdPath,
+    response: Response,
+    identity: AdminIdentity,
+    session: SessionDependency,
+) -> UserProfile:
+    """Deactivate another user and revoke their authentication artifacts."""
+    try:
+        user = deactivate_account(session, identity.user_id, _parse_user_id(user_id))
+    except (AdministratorRequired, SelfActionForbidden):
+        raise _admin_required() from None
+    except AccountNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono konta", "Konto nie istnieje."
+        ) from None
+    except AccountStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:account-state-conflict",
+            "Konflikt stanu konta",
+            "Konto nie jest aktywne i aktywowane.",
+        ) from None
+    except LastAdminConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:last-admin-conflict",
+            "Konflikt administratora",
+            "Operacja usunęłaby ostatniego aktywnego administratora.",
+        ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_user(user)
 
