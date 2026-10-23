@@ -137,10 +137,16 @@ def test_role_change_is_visible_to_existing_session(accounts) -> None:
     factory, codec = accounts
     grant = _login(factory, 13, codec)
     with factory() as session:
+        original_created_at = session.get(User, 13).created_at
+        original_updated_at = session.get(User, 13).updated_at
+    with factory() as session:
         changed = change_role(session, 11, 13, "admin")
         assert changed.role.code == "admin"
     with factory() as session:
-        assert session.get(User, 13).role.code == "admin"
+        target = session.get(User, 13)
+        assert target.role.code == "admin"
+        assert target.created_at == original_created_at
+        assert target.updated_at > original_updated_at
         assert validate_session(session, grant.session_id, 13).role == "admin"
         assert session.get(AuthSession, grant.session_id).revoked_at is None
     with factory() as session:
@@ -214,6 +220,9 @@ def test_deactivation_revokes_only_target_sessions_and_reset_token(
     second = _login(factory, target_id, codec)
     other = _login(factory, 12, codec)
     with factory() as session:
+        original_created_at = session.get(User, target_id).created_at
+        original_updated_at = session.get(User, target_id).updated_at
+    with factory() as session:
         reset = _token(target_id, "password_reset")
         activation = _token(target_id, "activation")
         other_reset = _token(12, "password_reset")
@@ -230,7 +239,10 @@ def test_deactivation_revokes_only_target_sessions_and_reset_token(
         assert target.is_active is False
         assert target.activated_at is not None
     with factory() as session:
-        assert session.get(User, target_id).is_active is False
+        target = session.get(User, target_id)
+        assert target.is_active is False
+        assert target.created_at == original_created_at
+        assert target.updated_at > original_updated_at
         for grant in (first, second):
             assert session.get(AuthSession, grant.session_id).revoked_at is not None
             with pytest.raises(InvalidSession):

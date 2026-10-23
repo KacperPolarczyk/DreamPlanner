@@ -38,6 +38,7 @@ from src.core.config import Settings
 from src.core.database import get_session
 from src.main import create_app
 from src.users.models import Role, User
+from src.users.password_service import InvalidCurrentPassword, change_own_password
 
 pytestmark = [
     pytest.mark.integration,
@@ -523,6 +524,40 @@ def test_session_lifecycle_on_disposable_postgres(
             )
             assert repeated_logout.status_code == 401
             assert repeated_logout.headers["www-authenticate"] == "Bearer"
+
+        with factory() as session:
+            password_grant = login(
+                session, "inactive@example.com", "chosen-password", codec
+            )
+        with factory() as session:
+            account = session.get(User, inactive_id)
+            original_created_at = account.created_at
+            original_updated_at = account.updated_at
+        with factory() as session:
+            with pytest.raises(InvalidCurrentPassword):
+                change_own_password(
+                    session,
+                    inactive_id,
+                    password_grant.session_id,
+                    "wrong-password",
+                    "replacement-password",
+                )
+        with factory() as session:
+            assert session.get(User, inactive_id).updated_at == original_updated_at
+        with factory() as session:
+            change_own_password(
+                session,
+                inactive_id,
+                password_grant.session_id,
+                "chosen-password",
+                "replacement-password",
+            )
+        with factory() as session:
+            account = session.get(User, inactive_id)
+            assert account.created_at == original_created_at
+            assert account.updated_at > original_updated_at
+            assert account.updated_at.utcoffset() == timedelta(0)
+            assert session.get(AuthSession, password_grant.session_id).revoked_at
 
         captured = capsys.readouterr()
         for secret in (activation, old_refresh, new_refresh, "chosen-password"):

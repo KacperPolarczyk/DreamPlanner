@@ -209,6 +209,7 @@ def activate_account(session: Session, data: ActivateAccountInput) -> None:
         user.password_hash = hash_password(password)
         user.is_active = True
         user.activated_at = now
+        user.updated_at = now
         token.used_at = now
         session.commit()
     except Exception:

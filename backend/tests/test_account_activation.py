@@ -1,6 +1,7 @@
 """Unit checks for account command schemas and token handling."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -121,6 +122,39 @@ def test_invalid_activation_rolls_back_without_exposing_token() -> None:
     assert "private-password" not in str(failure.value)
     session.rollback.assert_called_once_with()
     session.commit.assert_not_called()
+
+
+def test_activation_updates_timestamp_with_first_activation() -> None:
+    original = datetime(2020, 1, 1, tzinfo=UTC)
+    user = SimpleNamespace(
+        password_hash="placeholder",
+        is_active=False,
+        activated_at=None,
+        created_at=original,
+        updated_at=original,
+    )
+    token = SimpleNamespace(
+        id="token-id",
+        user_id=15,
+        used_at=None,
+        revoked_at=None,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    session = MagicMock()
+    session.scalar.side_effect = [token, user, token]
+
+    activate_account(
+        session,
+        ActivateAccountInput(
+            token=SecretStr("private-token"),
+            new_password=SecretStr("private-password"),
+        ),
+    )
+
+    assert user.created_at == original
+    assert user.updated_at == user.activated_at == token.used_at
+    assert user.updated_at > original
+    session.commit.assert_called_once_with()
 
 
 def test_empty_new_password_is_rejected_before_token_lookup() -> None:

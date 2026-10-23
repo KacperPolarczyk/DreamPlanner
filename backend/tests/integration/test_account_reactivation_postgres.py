@@ -132,6 +132,8 @@ def test_reactivation_on_disposable_postgres(monkeypatch: pytest.MonkeyPatch) ->
             user = session.get(User, target_id)
             assert user is not None and not user.is_active
             assert user.activated_at == activated_at
+            assert user.updated_at > user.created_at
+            first_updated_at = user.updated_at
             assert not verify_password("old-password", user.password_hash)
             assert session.get(AuthSession, old_session_id).revoked_at is not None
             stored = session.scalar(
@@ -146,6 +148,9 @@ def test_reactivation_on_disposable_postgres(monkeypatch: pytest.MonkeyPatch) ->
             second = issue_reactivation_token(
                 session, admin_id, target_id
             ).reactivation_token.get_secret_value()
+        with factory() as session:
+            second_updated_at = session.get(User, target_id).updated_at
+            assert second_updated_at > first_updated_at
         with pytest.raises(InvalidActionToken):
             _consume(factory, first, "new-password")
         with pytest.raises(InvalidActionToken):
@@ -225,6 +230,8 @@ def test_reactivation_on_disposable_postgres(monkeypatch: pytest.MonkeyPatch) ->
             user = session.get(User, target_id)
             assert user is not None and user.is_active
             assert user.activated_at == activated_at
+            assert user.updated_at > second_updated_at
+            assert user.updated_at.utcoffset() == timedelta(0)
             assert user.role.code == "manager"
             assert verify_password("new-password", user.password_hash)
             assert not verify_password("old-password", user.password_hash)

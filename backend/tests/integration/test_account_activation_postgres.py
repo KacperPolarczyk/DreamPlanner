@@ -135,6 +135,9 @@ def test_account_activation_on_disposable_postgres(
         with factory() as session:
             user = session.get(User, user_id)
             assert user is not None
+            created_at = user.created_at
+            initial_updated_at = user.updated_at
+            assert created_at == initial_updated_at
             assert user.is_active is False
             assert user.activated_at is None
             assert user.role.code == "employee"
@@ -168,6 +171,7 @@ def test_account_activation_on_disposable_postgres(
         second = replacement.activation_token.get_secret_value()
         assert second != first
         with factory() as session:
+            assert session.get(User, user_id).updated_at == initial_updated_at
             old = session.scalar(
                 select(AccountActionToken).where(
                     AccountActionToken.token_hash == hash_action_token(first)
@@ -201,6 +205,10 @@ def test_account_activation_on_disposable_postgres(
             assert user.is_active is True
             assert user.activated_at is not None
             assert activated_after <= user.activated_at <= datetime.now(UTC)
+            assert user.created_at == created_at
+            assert user.updated_at == user.activated_at
+            assert user.updated_at > initial_updated_at
+            assert user.updated_at.utcoffset() == timedelta(0)
             assert verify_password("chosen-password", user.password_hash)
             token = session.scalar(
                 select(AccountActionToken).where(
@@ -263,6 +271,8 @@ def test_account_activation_on_disposable_postgres(
             _activate(factory, used_value, "unused-password")
 
         rollback_id, rollback_token = _issue(factory, admin_id, "rollback@example.com")
+        with factory() as session:
+            rollback_updated_at = session.get(User, rollback_id).updated_at
         with monkeypatch.context() as patch:
             patch.setattr(
                 account_service,
@@ -282,6 +292,7 @@ def test_account_activation_on_disposable_postgres(
         with factory() as session:
             user = session.get(User, rollback_id)
             assert user is not None and user.is_active is False
+            assert user.updated_at == rollback_updated_at
             token = session.scalar(
                 select(AccountActionToken).where(
                     AccountActionToken.token_hash == hash_action_token(rollback_token)

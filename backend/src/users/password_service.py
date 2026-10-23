@@ -35,8 +35,10 @@ def change_own_password(
         user = lock_current_account(session, user_id, current_session_id)
         if not verify_password(current_password, user.password_hash):
             raise InvalidCurrentPassword("Invalid current password.")
+        now = datetime.now(UTC)
         user.password_hash = hash_password(new_password)
-        AuthSessionRepository(session).revoke_user_sessions(user_id, datetime.now(UTC))
+        user.updated_at = now
+        AuthSessionRepository(session).revoke_user_sessions(user_id, now)
         session.commit()
     except Exception:
         session.rollback()

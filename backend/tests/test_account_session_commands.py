@@ -109,11 +109,14 @@ def test_global_logout_revokes_only_the_callers_sessions(accounts) -> None:
     first = _login(factory, "owner@example.com", "old-password", codec)
     second = _login(factory, "owner@example.com", "old-password", codec)
     other = _login(factory, "other@example.com", "other-password", codec)
+    with factory() as session:
+        original_updated_at = session.get(User, first.user_id).updated_at
 
     with factory() as session:
         revoke_all_sessions(session, first.user_id, first.session_id)
 
     with factory() as session:
+        assert session.get(User, first.user_id).updated_at == original_updated_at
         for grant in (first, second):
             record = session.get(AuthSession, grant.session_id)
             assert record is not None and record.revoked_at is not None
@@ -130,6 +133,11 @@ def test_password_change_replaces_hash_and_ends_all_sessions(accounts) -> None:
     first = _login(factory, "owner@example.com", "old-password", codec)
     second = _login(factory, "owner@example.com", "old-password", codec)
     other = _login(factory, "other@example.com", "other-password", codec)
+    with factory() as session:
+        owner = session.get(User, 11)
+        original_created_at = owner.created_at
+        original_updated_at = owner.updated_at
+        other_updated_at = session.get(User, 12).updated_at
 
     with factory() as session:
         with pytest.raises(InvalidCurrentPassword):
@@ -143,6 +151,7 @@ def test_password_change_replaces_hash_and_ends_all_sessions(accounts) -> None:
         assert not session.in_transaction()
     with factory() as session:
         assert session.get(AuthSession, first.session_id).revoked_at is None
+        assert session.get(User, 11).updated_at == original_updated_at
         change_own_password(
             session, 11, first.session_id, "old-password", "new-password"
         )
@@ -151,6 +160,9 @@ def test_password_change_replaces_hash_and_ends_all_sessions(accounts) -> None:
         owner = session.get(User, 11)
         assert verify_password("new-password", owner.password_hash)
         assert not verify_password("old-password", owner.password_hash)
+        assert owner.created_at == original_created_at
+        assert owner.updated_at > original_updated_at
+        assert session.get(User, 12).updated_at == other_updated_at
         assert session.get(AuthSession, other.session_id).revoked_at is None
         for grant in (first, second):
             assert session.get(AuthSession, grant.session_id).revoked_at is not None
@@ -171,6 +183,8 @@ def test_command_failure_rolls_back_every_database_change(accounts, operation) -
     first = _login(factory, "owner@example.com", "old-password", codec)
     second = _login(factory, "owner@example.com", "old-password", codec)
     with factory() as session:
+        original_updated_at = session.get(User, 11).updated_at
+    with factory() as session:
 
         def fail_commit() -> None:
             session.flush()
@@ -187,7 +201,9 @@ def test_command_failure_rolls_back_every_database_change(accounts, operation) -
         assert not session.in_transaction()
 
     with factory() as session:
-        assert verify_password("old-password", session.get(User, 11).password_hash)
+        owner = session.get(User, 11)
+        assert verify_password("old-password", owner.password_hash)
+        assert owner.updated_at == original_updated_at
         assert all(
             session.get(AuthSession, grant.session_id).revoked_at is None
             for grant in (first, second)
