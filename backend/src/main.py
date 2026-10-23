@@ -1,15 +1,21 @@
 """FastAPI application assembly and ASGI entry point."""
 
+import logging
+from http import HTTPStatus
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException
 
 from src.api import api_router
 from src.auth.dependencies import AuthHttpError
 from src.auth.jwt_codec import JwtCodec
 from src.auth.rate_limits import AuthRateLimits, RateLimited
 from src.core.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 def _problem(
@@ -66,6 +72,31 @@ def create_app() -> FastAPI:
         """Translate authentication workflow errors to safe public problems."""
         headers = {"WWW-Authenticate": "Bearer"} if exc.bearer else None
         return _problem(exc.status, exc.kind, exc.title, exc.detail, headers)
+
+    @application.exception_handler(HTTPException)
+    def handle_http_error(request: Request, exc: HTTPException) -> JSONResponse:
+        """Render framework HTTP errors while retaining their response headers."""
+        try:
+            title = HTTPStatus(exc.status_code).phrase
+        except ValueError:
+            title = "HTTP Error"
+        detail = (
+            "Wystąpił błąd serwera."
+            if exc.status_code >= 500
+            else "Żądanie nie może zostać obsłużone."
+        )
+        return _problem(exc.status_code, "about:blank", title, detail, exc.headers)
+
+    @application.exception_handler(Exception)
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        """Log the exception server-side and return a fixed public 500 problem."""
+        logger.error(
+            "Unhandled request error",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        return _problem(
+            500, "about:blank", "Internal Server Error", "Wystąpił błąd serwera."
+        )
 
     @application.exception_handler(RateLimited)
     def handle_rate_limit(request: Request, exc: RateLimited) -> JSONResponse:
