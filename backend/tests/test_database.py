@@ -4,6 +4,8 @@ import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.core import database
@@ -53,6 +55,40 @@ def test_engine_is_lazy_and_session_factory_disables_implicit_writes(
     finally:
         database.get_session_factory.cache_clear()
         database.get_engine().dispose()
+        database.get_engine.cache_clear()
+
+
+def test_engine_hides_bound_parameters_in_database_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep sensitive auth values out of SQLAlchemy exception text."""
+    database_url = "postgresql+psycopg://app:password@invalid.invalid/db"
+    marker = "unique-sensitive-auth-marker"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    def memory_engine(url: str, **options: object) -> Engine:
+        assert url == database_url
+        return create_engine("sqlite+pysqlite:///:memory:", **options)
+
+    monkeypatch.setattr(database, "create_engine", memory_engine)
+    database.get_engine.cache_clear()
+    engine = database.get_engine()
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text("CREATE TABLE sample (value TEXT CHECK (value = 'allowed'))")
+            )
+            with pytest.raises(IntegrityError) as error:
+                connection.execute(
+                    text("INSERT INTO sample (value) VALUES (:value)"),
+                    {"value": marker},
+                )
+
+        assert marker in repr(error.value.params)
+        assert marker not in str(error.value)
+        assert marker not in repr(error.value)
+    finally:
+        engine.dispose()
         database.get_engine.cache_clear()
 
 

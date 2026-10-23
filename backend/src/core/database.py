@@ -26,7 +26,7 @@ def get_engine() -> Engine:
         raise ValueError("DATABASE_URL must be configured for database access")
     if make_url(database_url).drivername != "postgresql+psycopg":
         raise ValueError("DATABASE_URL must use the postgresql+psycopg driver")
-    return create_engine(database_url)
+    return create_engine(database_url, hide_parameters=True)
 
 
 @lru_cache
