@@ -29,6 +29,13 @@ class ActivateAccountInput(BaseModel):
     new_password: SecretStr
 
 
+class ReactivateAccountInput(BaseModel):
+    """A reactivation token and the replacement password."""
+
+    token: SecretStr
+    new_password: SecretStr
+
+
 class ChangePasswordInput(BaseModel):
     """Current credential and a nonempty replacement supplied by its owner."""
 
@@ -83,4 +90,19 @@ class ActivationTokenResponse(BaseModel):
     """One-time result of replacing a pending account's activation token."""
 
     activation_token: str
+    expires_at: datetime
+
+
+class ReactivationResponse(UserProfile):
+    """Account fields and a reactivation token delivered once."""
+
+    reactivation_token: str
+    expires_at: datetime
+
+
+class IssuedReactivation(BaseModel):
+    """Internal delivery value held only until the issuance response."""
+
+    user_id: int
+    reactivation_token: SecretStr
     expires_at: datetime

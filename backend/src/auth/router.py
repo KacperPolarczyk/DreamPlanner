@@ -31,8 +31,12 @@ from src.auth.session_service import (
 from src.auth.tokens import hash_action_token, hash_refresh_token
 from src.core.config import Settings
 from src.core.database import get_session
-from src.users.account_service import InvalidActionToken, activate_account
-from src.users.schemas import ActivateAccountInput
+from src.users.account_service import (
+    InvalidActionToken,
+    activate_account,
+    reactivate_account,
+)
+from src.users.schemas import ActivateAccountInput, ReactivateAccountInput
 from src.users.validation import AccountValidationError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -246,6 +250,48 @@ def activate(
     limit_status = _limiter(request).check_identity(request, "activation", key)
     try:
         activate_account(session, data)
+    except InvalidActionToken:
+        raise AuthHttpError(
+            401,
+            "urn:dreamplanner:problem:invalid-action-token",
+            "Token jest nieważny",
+            "Nieprawidłowy token.",
+        ) from None
+    except AccountValidationError:
+        raise AuthHttpError(
+            422,
+            "urn:dreamplanner:problem:validation-error",
+            "Nieprawidłowe dane",
+            "Nieprawidłowe dane żądania.",
+        ) from None
+    return Response(
+        status_code=204, headers={**limit_status.headers(), "Cache-Control": "no-store"}
+    )
+
+
+@router.post(
+    "/reactivations",
+    status_code=204,
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("invalid-action-token"),
+        403: _problem_response("Origin denied"),
+        422: _problem_response("validation-error"),
+        429: _problem_response("rate-limited"),
+    },
+)
+def reactivate(
+    request: Request, data: ReactivateAccountInput, session: SessionDependency
+) -> Response:
+    """Consume a reactivation token without creating a browser session."""
+    require_origin(request)
+    plaintext = data.token.get_secret_value()
+    digest = hash_action_token(plaintext)
+    found = ActionTokenRepository(session).find_password_reset_by_hash(digest)
+    key = _token_identity("account", digest, str(found.user_id) if found else None)
+    limit_status = _limiter(request).check_identity(request, "reactivation", key)
+    try:
+        reactivate_account(session, data)
     except InvalidActionToken:
         raise AuthHttpError(
             401,

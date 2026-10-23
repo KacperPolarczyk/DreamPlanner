@@ -11,10 +11,17 @@ from sqlalchemy.orm import Session
 from src.auth.models import AccountActionToken
 from src.auth.passwords import hash_password
 from src.auth.repository import ActionTokenRepository
+from src.auth.session_repository import AuthSessionRepository
 from src.auth.tokens import generate_action_token, hash_action_token
 from src.users.models import User
 from src.users.repository import UserRepository
-from src.users.schemas import ActivateAccountInput, CreateUserInput, IssuedActivation
+from src.users.schemas import (
+    ActivateAccountInput,
+    CreateUserInput,
+    IssuedActivation,
+    IssuedReactivation,
+    ReactivateAccountInput,
+)
 from src.users.validation import AccountValidationError
 
 ACTIVATION_LIFETIME = timedelta(hours=24)
@@ -202,6 +209,100 @@ def activate_account(session: Session, data: ActivateAccountInput) -> None:
         user.password_hash = hash_password(password)
         user.is_active = True
         user.activated_at = now
+        token.used_at = now
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def issue_reactivation_token(
+    session: Session, actor_id: int, user_id: int
+) -> IssuedReactivation:
+    """Replace credentials and pending reset tokens for a deactivated account.
+
+    Raises:
+        AdministratorRequired: If the actor lacks current admin access.
+        AccountNotFound: If the target account does not exist.
+        AccountStateConflict: If the target is not previously activated and inactive.
+    """
+    try:
+        users = UserRepository(session)
+        if not users.is_active_admin(actor_id):
+            raise AdministratorRequired("An active administrator is required.")
+        user = users.lock_user(user_id)
+        if user is None:
+            raise AccountNotFound("Account not found.")
+        if user.is_active or user.activated_at is None:
+            raise AccountStateConflict("Account is not deactivated.")
+
+        now = datetime.now(UTC)
+        user.password_hash = hash_password(secrets.token_urlsafe(32))
+        user.updated_at = now
+        AuthSessionRepository(session).revoke_user_sessions(user_id, now)
+        tokens = ActionTokenRepository(session)
+        tokens.revoke_unused_password_resets(user_id, now)
+        plaintext = generate_action_token()
+        token = AccountActionToken(
+            id=uuid4(),
+            user_id=user_id,
+            purpose="password_reset",
+            token_hash=hash_action_token(plaintext),
+            issued_at=now,
+            expires_at=now + ACTIVATION_LIFETIME,
+            issued_by=actor_id,
+        )
+        tokens.add(token)
+        issued = IssuedReactivation(
+            user_id=user_id,
+            reactivation_token=SecretStr(plaintext),
+            expires_at=token.expires_at,
+        )
+        session.commit()
+        return issued
+    except Exception:
+        session.rollback()
+        raise
+
+
+def reactivate_account(session: Session, data: ReactivateAccountInput) -> None:
+    """Consume a reset-purpose token and restore only account access.
+
+    Raises:
+        AccountValidationError: If the new password violates the existing policy.
+        InvalidActionToken: If the token is unusable for reactivation.
+    """
+    try:
+        plaintext = data.token.get_secret_value()
+        password = data.new_password.get_secret_value()
+        if not password:
+            raise AccountValidationError("Password must not be empty.")
+        if not plaintext:
+            raise InvalidActionToken("Invalid action token.")
+        users = UserRepository(session)
+        tokens = ActionTokenRepository(session)
+        found = tokens.find_password_reset_by_hash(hash_action_token(plaintext))
+        if found is None:
+            raise InvalidActionToken("Invalid action token.")
+        user = users.lock_user(found.user_id)
+        if user is None:
+            raise InvalidActionToken("Invalid action token.")
+        token = tokens.lock_token(found.id)
+        now = datetime.now(UTC)
+        if (
+            token is None
+            or token.purpose != "password_reset"
+            or token.token_hash != hash_action_token(plaintext)
+            or token.used_at is not None
+            or token.revoked_at is not None
+            or now >= token.expires_at
+            or user.is_active
+            or user.activated_at is None
+        ):
+            raise InvalidActionToken("Invalid action token.")
+        user.password_hash = hash_password(password)
+        user.is_active = True
+        user.updated_at = now
         token.used_at = now
         session.commit()
     except Exception:

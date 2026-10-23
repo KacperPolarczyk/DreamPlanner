@@ -20,6 +20,7 @@ _LIMITS: dict[str, tuple[RateLimitItem, RateLimitItem]] = {
     "activation": (parse("20/15 minutes"), parse("5/hour")),
 }
 _LIMITS["password_change"] = _LIMITS["login"]
+_LIMITS["reactivation"] = _LIMITS["activation"]
 
 
 class RateLimited(Exception):

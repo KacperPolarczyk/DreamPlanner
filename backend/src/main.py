@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
             "/api/v1/auth/sessions": "login",
             "/api/v1/auth/sessions/current/refresh": "refresh",
             "/api/v1/auth/activations": "activation",
+            "/api/v1/auth/reactivations": "reactivation",
             "/api/v1/users/me/password-change": "password_change",
         }.get(request.url.path)
         if request.method == "POST" and operation:

@@ -23,6 +23,7 @@ from src.users.account_service import (
     AdministratorRequired,
     EmailConflict,
     create_user,
+    issue_reactivation_token,
     reissue_activation_token,
 )
 from src.users.admin_service import (
@@ -40,6 +41,7 @@ from src.users.schemas import (
     ChangeRoleInput,
     CreatedUserResponse,
     CreateUserInput,
+    ReactivationResponse,
     UserListResponse,
     UserProfile,
 )
@@ -342,6 +344,51 @@ def deactivate_user(
         ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_user(user)
+
+
+@router.post(
+    "/{user_id}/reactivation",
+    response_model=ReactivationResponse,
+    summary="Wydaj token reaktywacji konta",
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required"),
+        404: _problem_response("Account not found"),
+        409: _problem_response("account-state-conflict"),
+        422: _problem_response("validation-error"),
+    },
+)
+def issue_reactivation(
+    user_id: UserIdPath,
+    response: Response,
+    identity: AdminIdentity,
+    session: SessionDependency,
+) -> ReactivationResponse:
+    """Issue one token for an already activated, inactive account."""
+    try:
+        issued = issue_reactivation_token(
+            session, identity.user_id, _parse_user_id(user_id)
+        )
+    except AdministratorRequired:
+        raise _admin_required() from None
+    except AccountNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono konta", "Konto nie istnieje."
+        ) from None
+    except AccountStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:account-state-conflict",
+            "Konflikt stanu konta",
+            "Konto nie jest zdezaktywowane.",
+        ) from None
+    user = UserRepository(session).get_by_id(issued.user_id)
+    response.headers["Cache-Control"] = "no-store"
+    return ReactivationResponse(
+        **_public_user(user).model_dump(),
+        reactivation_token=issued.reactivation_token.get_secret_value(),
+        expires_at=issued.expires_at,
+    )
 
 
 @router.post(

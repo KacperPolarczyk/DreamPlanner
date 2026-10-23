@@ -28,6 +28,17 @@ class ActionTokenRepository:
             )
         )
 
+    def find_password_reset_by_hash(
+        self, token_hash: bytes
+    ) -> AccountActionToken | None:
+        """Find a reset-purpose token before locking its account."""
+        return self.session.scalar(
+            select(AccountActionToken).where(
+                AccountActionToken.token_hash == token_hash,
+                AccountActionToken.purpose == "password_reset",
+            )
+        )
+
     def lock_token(self, token_id: UUID) -> AccountActionToken | None:
         """Lock a token after its account is locked."""
         return self.session.scalar(
