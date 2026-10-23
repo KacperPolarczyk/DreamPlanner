@@ -6,6 +6,7 @@ from typing import Annotated
 from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
+from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 
 from src.auth.jwt_codec import InvalidAccessToken, JwtCodec
@@ -32,6 +33,9 @@ from src.users.validation import AccountValidationError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 SessionDependency = Annotated[Session, Depends(get_session)]
+bearer_scheme = HTTPBearer(
+    scheme_name="BearerAuth", bearerFormat="JWT", auto_error=False
+)
 
 
 def _problem_response(description: str) -> dict[str, object]:
@@ -229,6 +233,7 @@ def renew_session(request: Request, session: SessionDependency) -> Response:
 @router.delete(
     "/sessions/current",
     status_code=204,
+    dependencies=[Depends(bearer_scheme)],
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Origin denied"),
