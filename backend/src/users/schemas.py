@@ -48,3 +48,17 @@ class UserProfile(BaseModel):
     activated_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class CreatedUserResponse(UserProfile):
+    """Public account fields and the one-time first activation token."""
+
+    activation_token: str
+    activation_expires_at: datetime
+
+
+class ActivationTokenResponse(BaseModel):
+    """One-time result of replacing a pending account's activation token."""
+
+    activation_token: str
+    expires_at: datetime

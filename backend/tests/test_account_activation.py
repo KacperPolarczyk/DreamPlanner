@@ -8,10 +8,12 @@ from pydantic import SecretStr, ValidationError
 
 from src.auth.tokens import generate_action_token, hash_action_token
 from src.users.account_service import (
+    AccountStateConflict,
     AdministratorRequired,
     InvalidActionToken,
     activate_account,
     create_user,
+    reissue_activation_token,
 )
 from src.users.schemas import ActivateAccountInput, CreateUserInput, IssuedActivation
 from src.users.validation import AccountValidationError
@@ -77,6 +79,32 @@ def test_create_user_rolls_back_when_admin_check_fails() -> None:
 
     session.rollback.assert_called_once_with()
     session.commit.assert_not_called()
+
+
+def test_reissue_rolls_back_when_admin_check_fails() -> None:
+    session = MagicMock()
+    session.scalar.return_value = None
+
+    with pytest.raises(AdministratorRequired):
+        reissue_activation_token(session, 42, 15)
+
+    session.rollback.assert_called_once_with()
+    session.commit.assert_not_called()
+
+
+def test_reissue_rejects_activated_account_before_token_lookup() -> None:
+    session = MagicMock()
+    session.scalar.side_effect = [
+        1,
+        MagicMock(is_active=False, activated_at=datetime.now(UTC)),
+    ]
+
+    with pytest.raises(AccountStateConflict):
+        reissue_activation_token(session, 42, 15)
+
+    session.rollback.assert_called_once_with()
+    session.commit.assert_not_called()
+    assert session.scalar.call_count == 2
 
 
 def test_invalid_activation_rolls_back_without_exposing_token() -> None:
