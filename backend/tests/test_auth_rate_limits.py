@@ -94,6 +94,22 @@ def _assert_limited(response) -> None:
     }
 
 
+@pytest.mark.parametrize("origin", [None, "https://evil.example"])
+def test_refresh_cookie_rejects_missing_or_foreign_origin(limited_app, origin) -> None:
+    """An otherwise recognized refresh cookie never bypasses Origin checks."""
+    headers = {"Cookie": "dreamplanner_refresh=known"}
+    if origin is not None:
+        headers["Origin"] = origin
+    with TestClient(limited_app) as client:
+        denied = client.post(REFRESH, headers=headers)
+        allowed = client.post(REFRESH, headers={**headers, "Origin": ORIGIN})
+    assert denied.status_code == 403
+    assert denied.headers["content-type"] == "application/problem+json"
+    assert denied.json()["type"] == "about:blank"
+    assert allowed.status_code == 401
+    assert allowed.json()["type"] == "urn:dreamplanner:problem:invalid-session"
+
+
 def test_login_email_limit_is_independent_of_ip(limited_app) -> None:
     """Ten failed attempts across distinct IPs exhaust one email counter."""
     for index in range(10):

@@ -13,11 +13,17 @@ from src.auth.dependencies import (
     AuthHttpError,
     CurrentIdentity,
     require_codec,
+    require_https,
     require_origin,
 )
 from src.auth.rate_limits import AuthRateLimits, LimitStatus
 from src.auth.repository import ActionTokenRepository
-from src.auth.schemas import AccessTokenResponse, LoginInput, ProblemDetails
+from src.auth.schemas import (
+    AccessTokenResponse,
+    LoginInput,
+    ProblemDetails,
+    validation_problem_schema,
+)
 from src.auth.session_repository import AuthSessionRepository
 from src.auth.session_service import (
     InvalidCredentials,
@@ -43,13 +49,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 
 
-def _problem_response(description: str) -> dict[str, object]:
+def _problem_response(
+    description: str, *, validation: bool = False
+) -> dict[str, object]:
     """Document the custom problem media type in OpenAPI."""
+    schema = (
+        validation_problem_schema()
+        if validation
+        else ProblemDetails.model_json_schema()
+    )
     return {
         "description": description,
-        "content": {
-            "application/problem+json": {"schema": ProblemDetails.model_json_schema()}
-        },
+        "content": {"application/problem+json": {"schema": schema}},
     }
 
 
@@ -105,11 +116,12 @@ def _grant_response(
 @router.post(
     "/sessions",
     response_model=AccessTokenResponse,
+    description="Wymaga dozwolonego nagłówka Origin; ustawia refresh cookie.",
     responses={
         400: _problem_response("Invalid JSON"),
         401: _problem_response("invalid-credentials"),
         403: _problem_response("Origin denied"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
         429: _problem_response("rate-limited"),
     },
 )
@@ -141,6 +153,7 @@ def create_session(
 @router.post(
     "/sessions/current/refresh",
     response_model=AccessTokenResponse,
+    description="Wymaga dozwolonego nagłówka Origin; używa refresh cookie.",
     responses={
         401: _problem_response("invalid-session"),
         403: _problem_response("Origin denied"),
@@ -171,6 +184,7 @@ def renew_session(request: Request, session: SessionDependency) -> Response:
     "/sessions/current",
     status_code=204,
     dependencies=[Depends(require_origin)],
+    description="Wymaga Bearer JWT i dozwolonego Origin; usuwa refresh cookie.",
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Origin denied"),
@@ -199,6 +213,7 @@ def delete_session(
 @router.delete(
     "/sessions",
     status_code=204,
+    description="Wymaga Bearer JWT i dozwolonego Origin; usuwa refresh cookie.",
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Origin denied"),
@@ -227,11 +242,12 @@ def delete_all_sessions(
 @router.post(
     "/activations",
     status_code=204,
+    description="Publiczne użycie tokenu jednorazowego; Origin nie jest wymagany.",
     responses={
         400: _problem_response("Invalid JSON"),
         401: _problem_response("invalid-action-token"),
         403: _problem_response("HTTPS required"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
         429: _problem_response("rate-limited"),
     },
 )
@@ -239,10 +255,7 @@ def activate(
     request: Request, data: ActivateAccountInput, session: SessionDependency
 ) -> Response:
     """Consume one activation token under IP and account rate limits."""
-    if _settings(request).environment == "production" and request.url.scheme != "https":
-        raise AuthHttpError(
-            403, "about:blank", "Odmowa dostępu", "Niedozwolone żądanie."
-        )
+    require_https(request)
     plaintext = data.token.get_secret_value()
     digest = hash_action_token(plaintext)
     found = ActionTokenRepository(session).find_activation_by_hash(digest)
@@ -272,11 +285,12 @@ def activate(
 @router.post(
     "/reactivations",
     status_code=204,
+    description="Publiczne użycie tokenu jednorazowego; Origin nie jest wymagany.",
     responses={
         400: _problem_response("Invalid JSON"),
         401: _problem_response("invalid-action-token"),
-        403: _problem_response("Origin denied"),
-        422: _problem_response("validation-error"),
+        403: _problem_response("HTTPS required in production"),
+        422: _problem_response("validation-error", validation=True),
         429: _problem_response("rate-limited"),
     },
 )
@@ -284,7 +298,7 @@ def reactivate(
     request: Request, data: ReactivateAccountInput, session: SessionDependency
 ) -> Response:
     """Consume a reactivation token without creating a browser session."""
-    require_origin(request)
+    require_https(request)
     plaintext = data.token.get_secret_value()
     digest = hash_action_token(plaintext)
     found = ActionTokenRepository(session).find_password_reset_by_hash(digest)

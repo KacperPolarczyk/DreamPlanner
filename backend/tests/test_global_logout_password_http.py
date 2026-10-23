@@ -145,28 +145,54 @@ def test_commands_require_valid_bearer(browser_app, authorization) -> None:
 
 
 @pytest.mark.parametrize("origin", [None, "https://evil.example"])
-def test_commands_reject_missing_or_foreign_origin(browser_app, origin) -> None:
+def test_global_logout_rejects_missing_or_foreign_origin(browser_app, origin) -> None:
     app, token, _, _, calls = browser_app
     headers = {"Authorization": f"Bearer {token}"}
     if origin is not None:
         headers["Origin"] = origin
     with TestClient(app) as client:
-        responses = [
-            client.delete(LOGOUT, headers=headers),
-            client.post(
-                CHANGE,
-                headers=headers,
-                json={
-                    "current_password": "old-password",
-                    "new_password": "new-password",
-                },
-            ),
-        ]
-    assert [response.status_code for response in responses] == [403, 403]
-    assert all(
-        r.headers["content-type"] == "application/problem+json" for r in responses
-    )
+        response = client.delete(LOGOUT, headers=headers)
+    assert response.status_code == 403
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["type"] == "about:blank"
     assert calls == []
+
+
+@pytest.mark.parametrize("origin", [None, "https://evil.example"])
+def test_password_change_accepts_missing_or_foreign_origin(browser_app, origin) -> None:
+    app, token, _, _, calls = browser_app
+    headers = {"Authorization": f"Bearer {token}"}
+    if origin is not None:
+        headers["Origin"] = origin
+    with TestClient(app) as client:
+        response = client.post(
+            CHANGE,
+            headers=headers,
+            json={"current_password": "old-password", "new_password": "new-password"},
+        )
+    assert response.status_code == 204
+    assert response.headers["cache-control"] == "no-store"
+    assert "Max-Age=0" in response.headers["set-cookie"]
+    if origin is not None:
+        assert "access-control-allow-origin" not in response.headers
+    assert [call[0] for call in calls] == ["password"]
+
+
+def test_password_change_requires_https_in_production(
+    browser_app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, token, _, _, calls = browser_app
+    monkeypatch.setattr(app.state.settings, "environment", "production")
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"current_password": "old-password", "new_password": "new-password"}
+    with TestClient(app, base_url="http://testserver") as client:
+        insecure = client.post(CHANGE, headers=headers, json=payload)
+    with TestClient(app, base_url="https://testserver") as client:
+        secure = client.post(CHANGE, headers=headers, json=payload)
+    assert insecure.status_code == 403
+    assert insecure.headers["content-type"] == "application/problem+json"
+    assert secure.status_code == 204
+    assert [call[0] for call in calls] == ["password"]
 
 
 def test_wrong_current_password_is_safe_problem(browser_app) -> None:

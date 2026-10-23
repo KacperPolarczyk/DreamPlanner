@@ -168,15 +168,37 @@ def test_public_reactivation_has_no_bearer_or_session(reactivation_app) -> None:
     assert calls == [("consume", "known")]
 
 
-def test_public_reactivation_requires_allowed_origin(reactivation_app) -> None:
+@pytest.mark.parametrize("origin", [None, ORIGIN, "https://evil.example"])
+def test_public_reactivation_does_not_require_origin(reactivation_app, origin) -> None:
     app, _, _, _, calls = reactivation_app
+    headers = {"Origin": origin} if origin is not None else {}
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/auth/reactivations",
+            headers=headers,
             json={"token": "known", "new_password": "new-password"},
         )
-    assert response.status_code == 403
-    assert calls == []
+    assert response.status_code == 204
+    assert "set-cookie" not in response.headers
+    if origin == "https://evil.example":
+        assert "access-control-allow-origin" not in response.headers
+    assert calls == [("consume", "known")]
+
+
+def test_public_reactivation_requires_https_in_production(
+    reactivation_app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, _, _, _, calls = reactivation_app
+    monkeypatch.setattr(app.state.settings, "environment", "production")
+    payload = {"token": "known", "new_password": "new-password"}
+    with TestClient(app, base_url="http://testserver") as client:
+        insecure = client.post("/api/v1/auth/reactivations", json=payload)
+    with TestClient(app, base_url="https://testserver") as client:
+        secure = client.post("/api/v1/auth/reactivations", json=payload)
+    assert insecure.status_code == 403
+    assert insecure.headers["content-type"] == "application/problem+json"
+    assert secure.status_code == 204
+    assert calls == [("consume", "known")]
 
 
 def test_public_invalid_token_is_uniform_problem(reactivation_app, monkeypatch) -> None:
@@ -272,6 +294,9 @@ def test_openapi_documents_reactivation(reactivation_app) -> None:
     }
     assert "security" not in consumed
     assert "204" in consumed["responses"]
+    assert consumed["responses"]["403"]["description"] == (
+        "HTTPS required in production"
+    )
     for status in ("400", "401", "403", "422", "429"):
         assert "application/problem+json" in consumed["responses"][status]["content"]
 

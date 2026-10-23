@@ -10,11 +10,11 @@ from src.auth.cookies import clear_refresh_cookie
 from src.auth.dependencies import (
     AuthHttpError,
     CurrentIdentity,
-    require_origin,
+    require_https,
     require_roles,
 )
 from src.auth.rate_limits import AuthRateLimits
-from src.auth.schemas import ProblemDetails
+from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.auth.session_service import ActiveIdentity, InvalidSession
 from src.core.database import get_session
 from src.users.account_service import (
@@ -55,13 +55,18 @@ SortField = Literal[
 ]
 
 
-def _problem_response(description: str) -> dict[str, object]:
+def _problem_response(
+    description: str, *, validation: bool = False
+) -> dict[str, object]:
     """Document the shared problem media type for account commands."""
+    schema = (
+        validation_problem_schema()
+        if validation
+        else ProblemDetails.model_json_schema()
+    )
     return {
         "description": description,
-        "content": {
-            "application/problem+json": {"schema": ProblemDetails.model_json_schema()}
-        },
+        "content": {"application/problem+json": {"schema": schema}},
     }
 
 
@@ -130,11 +135,12 @@ def read_current_user(
     "/me/password-change",
     status_code=204,
     summary="Zmień własne hasło",
+    description="Wymaga Bearer JWT i obecnego hasła; Origin nie jest wymagany.",
     responses={
         400: _problem_response("Invalid JSON"),
         401: _problem_response("Invalid access token or session"),
-        403: _problem_response("invalid-current-password or Origin denied"),
-        422: _problem_response("validation-error"),
+        403: _problem_response("invalid-current-password or HTTPS required"),
+        422: _problem_response("validation-error", validation=True),
         429: _problem_response("rate-limited"),
     },
 )
@@ -149,7 +155,7 @@ def change_current_password(
     limit_status = limiter.check_identity(
         request, "password_change", f"user:{identity.user_id}"
     )
-    require_origin(request)
+    require_https(request)
     try:
         change_own_password(
             session,
@@ -185,10 +191,11 @@ def change_current_password(
     "",
     response_model=UserListResponse,
     summary="Pobierz administracyjną listę kont",
+    description="Wymaga Bearer JWT i aktywnej roli `admin`.",
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Administrator required"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
     },
 )
 def list_accounts(
@@ -236,11 +243,12 @@ def list_accounts(
     "/{user_id}",
     response_model=UserProfile,
     summary="Pobierz administracyjne szczegóły konta",
+    description="Wymaga Bearer JWT i aktywnej roli `admin`.",
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Administrator required"),
         404: _problem_response("Account not found"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
     },
 )
 def read_account(
@@ -263,13 +271,14 @@ def read_account(
     "/{user_id}/role",
     response_model=UserProfile,
     summary="Zmień rolę konta",
+    description="Wymaga Bearer JWT i aktywnej roli `admin`.",
     responses={
         400: _problem_response("Invalid JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Administrator required or self-change forbidden"),
         404: _problem_response("Account not found"),
         409: _problem_response("last-admin-conflict"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
     },
 )
 def change_account_role(
@@ -305,12 +314,13 @@ def change_account_role(
     "/{user_id}/deactivation",
     response_model=UserProfile,
     summary="Dezaktywuj konto",
+    description="Wymaga Bearer JWT i aktywnej roli `admin`.",
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Administrator required or self-deactivation forbidden"),
         404: _problem_response("Account not found"),
         409: _problem_response("account-state-conflict or last-admin-conflict"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
     },
 )
 def deactivate_user(
@@ -350,12 +360,13 @@ def deactivate_user(
     "/{user_id}/reactivation",
     response_model=ReactivationResponse,
     summary="Wydaj token reaktywacji konta",
+    description="Wymaga Bearer JWT i aktywnej roli `admin`.",
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Administrator required"),
         404: _problem_response("Account not found"),
         409: _problem_response("account-state-conflict"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
     },
 )
 def issue_reactivation(
@@ -396,12 +407,13 @@ def issue_reactivation(
     status_code=201,
     response_model=CreatedUserResponse,
     summary="Utwórz konto i wydaj token aktywacyjny",
+    description="Wymaga Bearer JWT i aktywnej roli `admin`.",
     responses={
         400: _problem_response("Invalid JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Administrator required"),
         409: _problem_response("email-conflict"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
     },
 )
 def create_account(
@@ -438,12 +450,13 @@ def create_account(
     "/{user_id}/activation-tokens",
     response_model=ActivationTokenResponse,
     summary="Wydaj ponownie token pierwszej aktywacji",
+    description="Wymaga Bearer JWT i aktywnej roli `admin`.",
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Administrator required"),
         404: _problem_response("Account not found"),
         409: _problem_response("account-state-conflict"),
-        422: _problem_response("validation-error"),
+        422: _problem_response("validation-error", validation=True),
     },
 )
 def reissue_activation(

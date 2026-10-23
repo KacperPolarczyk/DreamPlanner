@@ -51,13 +51,21 @@ def require_codec(request: Request) -> JwtCodec:
 
 
 def require_origin(request: Request) -> None:
-    """Reject state-changing browser requests from unlisted origins."""
+    """Require a trusted origin for operations involving a refresh cookie."""
     settings = request.app.state.settings
     origin = request.headers.get("origin")
+    if origin is None or origin not in settings.cors_origins:
+        raise AuthHttpError(
+            403, "about:blank", "Odmowa dostępu", "Niedozwolone żądanie."
+        )
+    require_https(request)
+
+
+def require_https(request: Request) -> None:
+    """Reject unencrypted requests outside the approved local environment."""
     if (
-        origin is None
-        or origin not in settings.cors_origins
-        or (settings.environment == "production" and request.url.scheme != "https")
+        request.app.state.settings.environment == "production"
+        and request.url.scheme != "https"
     ):
         raise AuthHttpError(
             403, "about:blank", "Odmowa dostępu", "Niedozwolone żądanie."

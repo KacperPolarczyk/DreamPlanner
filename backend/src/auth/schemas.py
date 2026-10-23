@@ -27,3 +27,27 @@ class ProblemDetails(BaseModel):
     title: str
     status: int
     detail: str
+
+
+class ValidationIssue(BaseModel):
+    """One safe field-level request validation error."""
+
+    location: list[str]
+    code: str
+    message: str
+
+
+class ValidationProblemDetails(ProblemDetails):
+    """The 422 problem, including field errors when request parsing supplies them."""
+
+    type: Literal["urn:dreamplanner:problem:validation-error"]
+    status: Literal[422]
+    errors: list[ValidationIssue] = Field(default_factory=list)
+
+
+def validation_problem_schema() -> dict[str, object]:
+    """Inline the validation item so its reference resolves in OpenAPI."""
+    schema = ValidationProblemDetails.model_json_schema()
+    schema["properties"]["errors"]["items"] = ValidationIssue.model_json_schema()
+    schema.pop("$defs", None)
+    return schema
