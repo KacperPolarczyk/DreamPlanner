@@ -82,3 +82,25 @@ def rename_position(session: Session, position_id: int, name: str) -> Position:
     except Exception:
         session.rollback()
         raise
+
+
+def set_position_active(
+    session: Session, position_id: int, *, is_active: bool
+) -> Position:
+    """Set activity under a row lock and commit the resulting state.
+
+    Raises:
+        PositionNotFound: If the position does not exist.
+    """
+    try:
+        position = PositionRepository(session).get_by_id_for_update(position_id)
+        if position is None:
+            raise PositionNotFound
+        if position.is_active != is_active:
+            position.is_active = is_active
+            session.flush()
+        session.commit()
+        return position
+    except Exception:
+        session.rollback()
+        raise

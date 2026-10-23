@@ -23,6 +23,7 @@ from src.positions.service import (
     PositionNotFound,
     create_position,
     rename_position,
+    set_position_active,
 )
 
 router = APIRouter(prefix="/positions", tags=["positions"])
@@ -244,3 +245,82 @@ def update_position_name(
         ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_position(position)
+
+
+async def _reject_nonempty_body(request: Request) -> None:
+    """Reject content on the two bodyless activity operations."""
+    if await request.body():
+        raise RequestValidationError([{"type": "extra_forbidden", "loc": ("body",)}])
+
+
+def _change_activity(
+    position_id: str, response: Response, session: Session, *, is_active: bool
+) -> PositionResponse:
+    """Map a committed position activity change to the HTTP contract."""
+    parsed_id = int(position_id)
+    if parsed_id > MAX_BIGINT:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("path", "position_id")}]
+        )
+    try:
+        position = set_position_active(session, parsed_id, is_active=is_active)
+    except PositionNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono stanowiska", "Stanowisko nie istnieje."
+        ) from None
+    response.headers["Cache-Control"] = "no-store"
+    return _public_position(position)
+
+
+@router.post(
+    "/{position_id}/deactivation",
+    response_model=PositionResponse,
+    summary="Dezaktywuj stanowisko",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `admin`. Nie przyjmuje treści "
+        "żądania. Ustawia `is_active=false`; ponowne wywołanie zwraca `200`. "
+        "Zachowuje nazwę i istniejące powiązania."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required"),
+        404: _problem_response("Position not found"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def deactivate_position(
+    position_id: PositionIdPath,
+    response: Response,
+    identity: AdminIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> PositionResponse:
+    """Deactivate an existing position without removing it."""
+    return _change_activity(position_id, response, session, is_active=False)
+
+
+@router.post(
+    "/{position_id}/reactivation",
+    response_model=PositionResponse,
+    summary="Reaktywuj stanowisko",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `admin`. Nie przyjmuje treści "
+        "żądania. Ustawia `is_active=true`; ponowne wywołanie zwraca `200`. "
+        "Zachowuje nazwę i istniejące powiązania."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Administrator required"),
+        404: _problem_response("Position not found"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def reactivate_position(
+    position_id: PositionIdPath,
+    response: Response,
+    identity: AdminIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> PositionResponse:
+    """Reactivate an existing position without changing its name."""
+    return _change_activity(position_id, response, session, is_active=True)
