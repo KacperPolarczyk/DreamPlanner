@@ -79,6 +79,22 @@ class UserListResponse(BaseModel):
     total: int
 
 
+class EmployeeListItem(BaseModel):
+    """Only the account fields needed to choose an assignment target."""
+
+    user_id: str
+    full_name: str
+
+
+class EmployeeListResponse(BaseModel):
+    """A filtered page of employees eligible for a new assignment."""
+
+    items: list[EmployeeListItem]
+    limit: int
+    offset: int
+    total: int
+
+
 class CreatedUserResponse(UserProfile):
     """Public account fields and the one-time first activation token."""
 

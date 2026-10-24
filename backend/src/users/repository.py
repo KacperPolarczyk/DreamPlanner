@@ -87,6 +87,33 @@ class UserRepository:
             .execution_options(populate_existing=True)
         )
 
+    def list_eligible_employees(
+        self, *, query: str | None, limit: int, offset: int
+    ) -> tuple[list[tuple[int, str]], int]:
+        """Return a page of assignable employee identifiers and names."""
+        filters = [
+            Role.code == "employee",
+            User.is_active.is_(True),
+            User.activated_at.is_not(None),
+        ]
+        if query:
+            filters.append(
+                func.lower(User.full_name).contains(query.lower(), autoescape=True)
+            )
+
+        total = self.session.scalar(
+            select(func.count()).select_from(User).join(Role).where(*filters)
+        )
+        rows = self.session.execute(
+            select(User.id, User.full_name)
+            .join(Role)
+            .where(*filters)
+            .order_by(User.full_name.asc(), User.id.asc())
+            .limit(limit)
+            .offset(offset)
+        ).all()
+        return [(user_id, full_name) for user_id, full_name in rows], total or 0
+
     def list_users(
         self,
         *,
