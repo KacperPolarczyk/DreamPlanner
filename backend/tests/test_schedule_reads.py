@@ -340,7 +340,7 @@ def test_openapi_documents_schedule_reads(schedules_api) -> None:
     app, _, _, _ = schedules_api
     paths = app.openapi()["paths"]
     assert set(paths[PATH]) == {"get", "post"}
-    assert set(paths[f"{PATH}/{{schedule_id}}"]) == {"get"}
+    assert set(paths[f"{PATH}/{{schedule_id}}"]) == {"get", "delete"}
     assert not any(
         path.startswith(f"{PATH}/") and path != f"{PATH}/{{schedule_id}}"
         for path in paths

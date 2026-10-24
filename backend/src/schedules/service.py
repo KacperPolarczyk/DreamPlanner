@@ -1,4 +1,4 @@
-"""Monthly schedule creation and its period conflict."""
+"""Monthly schedule writing workflows and their expected conflicts."""
 
 import sqlite3
 
@@ -11,6 +11,18 @@ from src.schedules.repository import ScheduleRepository
 
 class SchedulePeriodConflict(Exception):
     """A schedule already exists for the requested year and month."""
+
+
+class ScheduleNotFound(Exception):
+    """The requested schedule does not exist."""
+
+
+class ScheduleStateConflict(Exception):
+    """Only a draft schedule can be deleted."""
+
+
+class ScheduleNotEmpty(Exception):
+    """The schedule has direct or indirect dependent data."""
 
 
 def _period_conflict(exc: IntegrityError) -> bool:
@@ -44,6 +56,38 @@ def create_schedule(
         if _period_conflict(exc):
             raise SchedulePeriodConflict("Schedule period already exists.") from None
         raise
+    except Exception:
+        session.rollback()
+        raise
+
+
+def delete_empty_draft(session: Session, schedule_id: int) -> None:
+    """Delete a draft only after locking it and checking both direct child tables.
+
+    PostgreSQL's immediate child FKs take KEY SHARE on the parent, which
+    conflicts with FOR UPDATE. Under READ COMMITTED, child checks issued after
+    the lock see a competing insert that committed while this call waited.
+    Future child writers must keep their FK checks in the same transaction.
+
+    Raises:
+        ScheduleNotFound: If the row does not exist when the lock is acquired.
+        ScheduleStateConflict: If its current status is not draft.
+        ScheduleNotEmpty: If either direct child table contains a row.
+    """
+    try:
+        repository = ScheduleRepository(session)
+        schedule = repository.get_by_id_for_update(schedule_id)
+        if schedule is None:
+            raise ScheduleNotFound
+        if schedule.status != "draft":
+            raise ScheduleStateConflict
+        if repository.has_shift_requirements(schedule_id):
+            raise ScheduleNotEmpty
+        if repository.has_availability_submissions(schedule_id):
+            raise ScheduleNotEmpty
+        repository.delete(schedule)
+        session.flush()
+        session.commit()
     except Exception:
         session.rollback()
         raise

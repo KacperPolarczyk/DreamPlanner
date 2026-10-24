@@ -19,7 +19,14 @@ from src.schedules.schemas import (
     ScheduleResponse,
     ScheduleStatus,
 )
-from src.schedules.service import SchedulePeriodConflict, create_schedule
+from src.schedules.service import (
+    ScheduleNotEmpty,
+    ScheduleNotFound,
+    SchedulePeriodConflict,
+    ScheduleStateConflict,
+    create_schedule,
+    delete_empty_draft,
+)
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 SessionDependency = Annotated[Session, Depends(get_session)]
@@ -77,6 +84,12 @@ def _parse_schedule_id(schedule_id: str) -> int:
             [{"type": "value_error", "loc": ("path", "schedule_id")}]
         )
     return parsed_id
+
+
+async def _reject_nonempty_body(request: Request) -> None:
+    """Reject content on a bodyless schedule operation."""
+    if await request.body():
+        raise RequestValidationError([{"type": "extra_forbidden", "loc": ("body",)}])
 
 
 @router.post(
@@ -216,3 +229,52 @@ def read_schedule(
         )
     response.headers["Cache-Control"] = "no-store"
     return _public_schedule(schedule)
+
+
+@router.delete(
+    "/{schedule_id}",
+    status_code=204,
+    summary="Usuń pusty szkic grafiku",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `manager`. Usuwa wyłącznie "
+        "pusty grafik `draft`, po zablokowaniu wiersza i sprawdzeniu "
+        "zapotrzebowania oraz zgłoszeń dyspozycyjności. Sukces nie ma "
+        "treści i zawiera `Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule not found"),
+        409: _problem_response("schedule-state-conflict or schedule-not-empty"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def delete_schedule(
+    schedule_id: ScheduleIdPath,
+    response: Response,
+    identity: ManagerIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> None:
+    """Delete one empty draft after its transaction commits."""
+    try:
+        delete_empty_draft(session, _parse_schedule_id(schedule_id))
+    except ScheduleNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
+        ) from None
+    except ScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Nie można usunąć grafiku",
+            "Usunąć można tylko grafik w stanie draft.",
+        ) from None
+    except ScheduleNotEmpty:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-not-empty",
+            "Grafik nie jest pusty",
+            "Grafik zawiera dane powiązane i nie może zostać usunięty.",
+        ) from None
+    response.headers["Cache-Control"] = "no-store"
