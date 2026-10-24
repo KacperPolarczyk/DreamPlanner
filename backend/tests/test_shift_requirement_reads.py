@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -67,6 +67,8 @@ def shift_requirements_api(monkeypatch: pytest.MonkeyPatch):
             (48, 2027, 2, "closed"),
             (49, 2027, 3, "published"),
             (50, 2027, 4, "draft"),
+            (51, 2028, 3, "draft"),
+            (52, 2028, 10, "draft"),
         ]
         session.add_all(
             [
@@ -197,7 +199,19 @@ def shift_requirements_api(monkeypatch: pytest.MonkeyPatch):
 
     def test_session():
         with Session(engine) as session:
-            yield session
+
+            def sqlite_identity(session, flush_context, instances) -> None:
+                """Emulate PostgreSQL BIGINT identity for endpoint tests."""
+                for pending in session.new:
+                    if isinstance(pending, ShiftRequirement) and pending.id is None:
+                        current = session.scalar(select(func.max(ShiftRequirement.id)))
+                        pending.id = (current or 0) + 1
+
+            event.listen(session, "before_flush", sqlite_identity)
+            try:
+                yield session
+            finally:
+                event.remove(session, "before_flush", sqlite_identity)
 
     app.dependency_overrides[get_session] = test_session
     token = app.state.jwt_codec.issue(42, session_id)
@@ -555,7 +569,7 @@ def test_invalid_paths_and_query_values_return_422_problem(
     assert response.json()["errors"]
 
 
-def test_openapi_documents_only_read_operations_and_contract(
+def test_openapi_documents_read_operations_and_contract(
     shift_requirements_api,
 ) -> None:
     app, _, _, _ = shift_requirements_api
@@ -563,11 +577,22 @@ def test_openapi_documents_only_read_operations_and_contract(
     paths = schema["paths"]
     list_path = f"{PATH}/{{schedule_id}}/shift-requirements"
     detail_path = f"{list_path}/{{requirement_id}}"
-    assert set(paths[list_path]) == {"get"}
+    assert set(paths[list_path]) == {"get", "post"}
     assert set(paths[detail_path]) == {"get"}
 
     list_operation = paths[list_path]["get"]
     detail_operation = paths[detail_path]["get"]
+    create_operation = paths[list_path]["post"]
+    assert create_operation["security"] == [{"BearerAuth": []}]
+    assert {"201", "400", "401", "403", "404", "409", "422"} <= set(
+        create_operation["responses"]
+    )
+    assert create_operation["responses"]["201"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/ShiftRequirementResponse"}
+    assert create_operation["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/CreateShiftRequirementInput"
+    }
     for operation, response_name in (
         (list_operation, "ShiftRequirementListResponse"),
         (detail_operation, "ShiftRequirementResponse"),
