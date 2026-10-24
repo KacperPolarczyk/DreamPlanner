@@ -344,6 +344,8 @@ def test_openapi_documents_schedule_reads(schedules_api) -> None:
     assert {path for path in paths if path.startswith(PATH)} == {
         PATH,
         f"{PATH}/{{schedule_id}}",
+        f"{PATH}/{{schedule_id}}/shift-requirements",
+        f"{PATH}/{{schedule_id}}/shift-requirements/{{requirement_id}}",
         f"{PATH}/{{schedule_id}}/collection-opening",
         f"{PATH}/{{schedule_id}}/collection-closing",
         f"{PATH}/{{schedule_id}}/closing",

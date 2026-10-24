@@ -1,6 +1,6 @@
 """Public response shapes for monthly schedule reads."""
 
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +37,30 @@ class ScheduleListResponse(BaseModel):
     """A filtered page of schedules with the count before pagination."""
 
     items: list[ScheduleResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class ShiftRequirementResponse(BaseModel):
+    """The approved public fields of one staffing requirement."""
+
+    id: str
+    schedule_id: str
+    position_id: str
+    position_name: str
+    position_is_active: bool
+    work_date: date
+    start_time: time
+    end_time: time
+    required_workers: int
+    note: str | None
+
+
+class ShiftRequirementListResponse(BaseModel):
+    """A filtered page of staffing requirements and its total count."""
+
+    items: list[ShiftRequirementResponse]
     limit: int
     offset: int
     total: int

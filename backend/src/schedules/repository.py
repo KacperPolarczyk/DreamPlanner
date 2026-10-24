@@ -1,9 +1,12 @@
 """Persistence and read queries for monthly schedules."""
 
+from datetime import date
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.availability.models import AvailabilitySubmission
+from src.positions.models import Position
 from src.schedules.models import Schedule, ShiftRequirement
 
 
@@ -98,3 +101,56 @@ class ScheduleRepository:
             .offset(offset)
         ).all()
         return list(schedules), total or 0
+
+
+class ShiftRequirementRepository:
+    """Read staffing requirements with their position details."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def list_for_schedule(
+        self,
+        schedule_id: int,
+        *,
+        work_date: date | None,
+        position_id: int | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[tuple[ShiftRequirement, Position]], int]:
+        """Return a filtered page and its pre-pagination count."""
+        filters = [ShiftRequirement.schedule_id == schedule_id]
+        if work_date is not None:
+            filters.append(ShiftRequirement.work_date == work_date)
+        if position_id is not None:
+            filters.append(ShiftRequirement.position_id == position_id)
+
+        total = self.session.scalar(
+            select(func.count()).select_from(ShiftRequirement).where(*filters)
+        )
+        rows = self.session.execute(
+            select(ShiftRequirement, Position)
+            .join(Position, Position.id == ShiftRequirement.position_id)
+            .where(*filters)
+            .order_by(
+                ShiftRequirement.work_date.asc(),
+                ShiftRequirement.start_time.asc(),
+                ShiftRequirement.id.asc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        ).all()
+        return list(rows), total or 0
+
+    def get_for_schedule(
+        self, schedule_id: int, requirement_id: int
+    ) -> tuple[ShiftRequirement, Position] | None:
+        """Return one requirement only when it belongs to the requested schedule."""
+        return self.session.execute(
+            select(ShiftRequirement, Position)
+            .join(Position, Position.id == ShiftRequirement.position_id)
+            .where(
+                ShiftRequirement.schedule_id == schedule_id,
+                ShiftRequirement.id == requirement_id,
+            )
+        ).one_or_none()

@@ -1,6 +1,6 @@
 """HTTP endpoints for monthly schedule reads."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
@@ -11,13 +11,16 @@ from src.auth.dependencies import AuthHttpError, require_roles
 from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
-from src.schedules.models import Schedule
-from src.schedules.repository import ScheduleRepository
+from src.positions.models import Position
+from src.schedules.models import Schedule, ShiftRequirement
+from src.schedules.repository import ScheduleRepository, ShiftRequirementRepository
 from src.schedules.schemas import (
     CreateScheduleInput,
     ScheduleListResponse,
     ScheduleResponse,
     ScheduleStatus,
+    ShiftRequirementListResponse,
+    ShiftRequirementResponse,
 )
 from src.schedules.service import (
     ScheduleNotEmpty,
@@ -79,6 +82,24 @@ def _public_schedule(schedule: Schedule) -> ScheduleResponse:
     )
 
 
+def _public_shift_requirement(
+    requirement: ShiftRequirement, position: Position
+) -> ShiftRequirementResponse:
+    """Select only fields approved for the public requirement contract."""
+    return ShiftRequirementResponse(
+        id=str(requirement.id),
+        schedule_id=str(requirement.schedule_id),
+        position_id=str(requirement.position_id),
+        position_name=position.name,
+        position_is_active=position.is_active,
+        work_date=requirement.work_date,
+        start_time=requirement.start_time,
+        end_time=requirement.end_time,
+        required_workers=requirement.required_workers,
+        note=requirement.note,
+    )
+
+
 def _parse_schedule_id(schedule_id: str) -> int:
     """Validate a decimal path identifier within PostgreSQL BIGINT range."""
     parsed_id = int(schedule_id)
@@ -93,6 +114,149 @@ async def _reject_nonempty_body(request: Request) -> None:
     """Reject content on a bodyless schedule operation."""
     if await request.body():
         raise RequestValidationError([{"type": "extra_forbidden", "loc": ("body",)}])
+
+
+def _parse_requirement_id(requirement_id: str) -> int:
+    """Validate a decimal path identifier within PostgreSQL BIGINT range."""
+    parsed_id = int(requirement_id)
+    if parsed_id > MAX_BIGINT:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("path", "requirement_id")}]
+        )
+    return parsed_id
+
+
+@router.get(
+    "/{schedule_id}/shift-requirements",
+    response_model=ShiftRequirementListResponse,
+    summary="Pobierz zapotrzebowanie grafiku",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `admin` lub `manager`. Zwraca "
+        "zapotrzebowanie niezależnie od statusu i twórcy grafiku. Filtry "
+        "`work_date` i `position_id` można łączyć. Kolejność jest stała: "
+        "`work_date ASC, start_time ASC, id ASC`; `total` liczy wyniki "
+        "po filtrach przed paginacją. Odpowiedź zawiera `Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Admin or manager required"),
+        404: _problem_response("Schedule not found"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def list_shift_requirements(
+    schedule_id: ScheduleIdPath,
+    request: Request,
+    response: Response,
+    identity: ReadIdentity,
+    session: SessionDependency,
+    work_date: date | None = None,
+    position_id: Annotated[
+        str | None, Query(pattern=r"^[0-9]+$", max_length=19)
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0, le=MAX_BIGINT)] = 0,
+) -> ShiftRequirementListResponse:
+    """Return one authorized, filtered page of requirements for a schedule."""
+    allowed = {"work_date", "position_id", "limit", "offset"}
+    unknown = set(request.query_params) - allowed
+    repeated = {key for key in allowed if len(request.query_params.getlist(key)) > 1}
+    if unknown or repeated:
+        raise RequestValidationError(
+            [
+                {"type": "extra_forbidden", "loc": ("query", key)}
+                for key in sorted(unknown | repeated)
+            ]
+        )
+
+    non_decimal = {
+        key
+        for key in ("limit", "offset")
+        if (value := request.query_params.get(key)) is not None
+        and (not value.isascii() or not value.isdecimal())
+    }
+    if non_decimal:
+        raise RequestValidationError(
+            [
+                {"type": "int_parsing", "loc": ("query", key)}
+                for key in sorted(non_decimal)
+            ]
+        )
+
+    parsed_position_id = int(position_id) if position_id is not None else None
+    if parsed_position_id == 0 or (
+        parsed_position_id is not None and parsed_position_id > MAX_BIGINT
+    ):
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "position_id")}]
+        )
+
+    parsed_schedule_id = _parse_schedule_id(schedule_id)
+    if ScheduleRepository(session).get_by_id(parsed_schedule_id) is None:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
+        )
+
+    rows, total = ShiftRequirementRepository(session).list_for_schedule(
+        parsed_schedule_id,
+        work_date=work_date,
+        position_id=parsed_position_id,
+        limit=limit,
+        offset=offset,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return ShiftRequirementListResponse(
+        items=[
+            _public_shift_requirement(requirement, position)
+            for requirement, position in rows
+        ],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )
+
+
+@router.get(
+    "/{schedule_id}/shift-requirements/{requirement_id}",
+    response_model=ShiftRequirementResponse,
+    summary="Pobierz szczegóły zapotrzebowania",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `admin` lub `manager`. Zwraca "
+        "pozycję tylko wtedy, gdy należy do wskazanego grafiku. Odczyt jest "
+        "dozwolony w każdym statusie grafiku oraz dla nieaktywnego stanowiska. "
+        "Odpowiedź zawiera `Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Admin or manager required"),
+        404: _problem_response("Schedule or requirement not found"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def read_shift_requirement(
+    schedule_id: ScheduleIdPath,
+    requirement_id: Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)],
+    response: Response,
+    identity: ReadIdentity,
+    session: SessionDependency,
+) -> ShiftRequirementResponse:
+    """Return one requirement scoped to its schedule, including position data."""
+    parsed_schedule_id = _parse_schedule_id(schedule_id)
+    parsed_requirement_id = _parse_requirement_id(requirement_id)
+    schedule = ScheduleRepository(session).get_by_id(parsed_schedule_id)
+    if schedule is None:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono zapotrzebowania", "Zasób nie istnieje."
+        )
+    row = ShiftRequirementRepository(session).get_for_schedule(
+        parsed_schedule_id, parsed_requirement_id
+    )
+    if row is None:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono zapotrzebowania", "Zasób nie istnieje."
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return _public_shift_requirement(*row)
 
 
 @router.post(
