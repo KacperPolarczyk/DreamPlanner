@@ -25,6 +25,7 @@ from src.schedules.service import (
     SchedulePeriodConflict,
     ScheduleStateConflict,
     close_collection,
+    close_schedule,
     create_schedule,
     delete_empty_draft,
     open_collection,
@@ -364,6 +365,50 @@ def close_schedule_collection(
             "urn:dreamplanner:problem:schedule-state-conflict",
             "Niedozwolona zmiana stanu grafiku",
             "Zbieranie dyspozycyjności można zamknąć tylko dla grafiku collecting.",
+        ) from None
+    response.headers["Cache-Control"] = "no-store"
+    return _public_schedule(schedule)
+
+
+@router.post(
+    "/{schedule_id}/closing",
+    response_model=ScheduleResponse,
+    summary="Przejdź do obsadzania zmian",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `manager`. Bez treści żądania. "
+        "Przenosi wyłącznie grafik `collection_closed` do `closed`, w którym "
+        "manager może rozpocząć obsadzanie zmian. Nie ustawia nowego "
+        "znacznika czasu ani nie wymaga zapotrzebowania, dyspozycyjności "
+        "lub przydziałów. Odpowiedzi zawierają `Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule not found"),
+        409: _problem_response("schedule-state-conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def close_schedule_stage(
+    schedule_id: ScheduleIdPath,
+    response: Response,
+    identity: ManagerIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> ScheduleResponse:
+    """Close one collection stage after its transaction commits."""
+    try:
+        schedule = close_schedule(session, _parse_schedule_id(schedule_id))
+    except ScheduleNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
+        ) from None
+    except ScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Niedozwolona zmiana stanu grafiku",
+            "Grafik można zamknąć tylko po zakończeniu zbierania dyspozycyjności.",
         ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_schedule(schedule)

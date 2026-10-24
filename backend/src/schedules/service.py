@@ -95,15 +95,15 @@ def delete_empty_draft(session: Session, schedule_id: int) -> None:
         raise
 
 
-def _change_collection_stage(
+def _change_schedule_stage(
     session: Session,
     schedule_id: int,
     *,
-    source_status: Literal["draft", "collecting"],
-    target_status: Literal["collecting", "collection_closed"],
-    timestamp_field: Literal["collection_opened_at", "collection_closed_at"],
+    source_status: Literal["draft", "collecting", "collection_closed"],
+    target_status: Literal["collecting", "collection_closed", "closed"],
+    timestamp_field: Literal["collection_opened_at", "collection_closed_at"] | None,
 ) -> Schedule:
-    """Lock, validate, and commit one collection stage and its UTC timestamp."""
+    """Lock, validate, and commit one stage and its optional UTC timestamp."""
     try:
         schedule = ScheduleRepository(session).get_by_id_for_update(schedule_id)
         if schedule is None:
@@ -111,7 +111,8 @@ def _change_collection_stage(
         if schedule.status != source_status:
             raise ScheduleStateConflict
         schedule.status = target_status
-        setattr(schedule, timestamp_field, datetime.now(UTC))
+        if timestamp_field is not None:
+            setattr(schedule, timestamp_field, datetime.now(UTC))
         session.flush()
         session.commit()
         return schedule
@@ -127,7 +128,7 @@ def open_collection(session: Session, schedule_id: int) -> Schedule:
         ScheduleNotFound: If the schedule no longer exists.
         ScheduleStateConflict: If its current status is not draft.
     """
-    return _change_collection_stage(
+    return _change_schedule_stage(
         session,
         schedule_id,
         source_status="draft",
@@ -143,10 +144,26 @@ def close_collection(session: Session, schedule_id: int) -> Schedule:
         ScheduleNotFound: If the schedule no longer exists.
         ScheduleStateConflict: If its current status is not collecting.
     """
-    return _change_collection_stage(
+    return _change_schedule_stage(
         session,
         schedule_id,
         source_status="collecting",
         target_status="collection_closed",
         timestamp_field="collection_closed_at",
+    )
+
+
+def close_schedule(session: Session, schedule_id: int) -> Schedule:
+    """Move one collection_closed schedule to closed without changing timestamps.
+
+    Raises:
+        ScheduleNotFound: If the schedule no longer exists.
+        ScheduleStateConflict: If its current status is not collection_closed.
+    """
+    return _change_schedule_stage(
+        session,
+        schedule_id,
+        source_status="collection_closed",
+        target_status="closed",
+        timestamp_field=None,
     )
