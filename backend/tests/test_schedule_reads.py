@@ -349,6 +349,8 @@ def test_openapi_documents_schedule_reads(schedules_api) -> None:
         f"{PATH}/{{schedule_id}}/collection-opening",
         f"{PATH}/{{schedule_id}}/collection-closing",
         f"{PATH}/{{schedule_id}}/closing",
+        f"{PATH}/{{schedule_id}}/availability-submissions",
+        f"{PATH}/{{schedule_id}}/availability-submissions/{{submission_id}}",
     }
     for path, statuses, result in (
         (PATH, {"200", "401", "403", "422"}, "ScheduleListResponse"),
