@@ -255,3 +255,30 @@ def create_shift_assignment(
     except Exception:
         session.rollback()
         raise
+
+
+def delete_shift_assignment(
+    session: Session, schedule_id: int, assignment_id: int, *, actor_role: str
+) -> None:
+    """Delete one scoped assignment after locking its closed schedule."""
+    try:
+        if actor_role != "manager":
+            raise AssignmentWriteForbidden
+
+        schedule = ScheduleRepository(session).get_by_id_for_update(schedule_id)
+        if schedule is None:
+            raise AssignmentScheduleNotFound
+        if schedule.status != "closed":
+            raise AssignmentScheduleStateConflict
+
+        repository = ShiftAssignmentRepository(session)
+        assignment = repository.get_for_schedule_for_update(schedule_id, assignment_id)
+        if assignment is None:
+            raise AssignmentNotFound
+
+        repository.delete(assignment)
+        session.flush()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise

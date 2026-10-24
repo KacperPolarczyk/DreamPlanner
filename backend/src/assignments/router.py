@@ -27,6 +27,7 @@ from src.assignments.service import (
     AssignmentWriteForbidden,
     assignment_response,
     create_shift_assignment,
+    delete_shift_assignment,
     list_shift_assignments,
     read_shift_assignment,
 )
@@ -42,6 +43,12 @@ ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
 PathId = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 MAX_BIGINT = 9223372036854775807
 ALLOWED_QUERY = {"limit", "offset", "work_date", "shift_requirement_id", "user_id"}
+
+
+async def _reject_nonempty_body(request: Request) -> None:
+    """Reject content on the bodyless assignment deletion operation."""
+    if await request.body():
+        raise RequestValidationError([{"type": "extra_forbidden", "loc": ("body",)}])
 
 
 def _problem_response(description: str, *, validation: bool = False) -> dict:
@@ -415,3 +422,58 @@ def post_assignment(
     )
     response.headers["Cache-Control"] = "no-store"
     return result
+
+
+@router.delete(
+    "/{schedule_id}/shift-assignments/{assignment_id}",
+    status_code=204,
+    summary="Usuń przydział do zmiany",
+    description=(
+        "Wymaga Bearer JWT i aktualnej roli `manager`; `admin` i `employee` "
+        "otrzymują 403. Grafik musi być w stanie `closed`; DELETE nie zmienia "
+        "jego statusu ani required_workers. Przydział musi należeć do grafiku; "
+        "obcy lub ponownie usuwany przydział daje 404. Nie sprawdza bieżącej "
+        "aktywności pracownika ani stanowiska i nie przelicza ostrzeżeń. "
+        "Identyfikatory: 1–19 cyfr ASCII, zakres 0–9223372036854775807. "
+        "Niepuste body, także {} lub [], daje 422. Sukces 204 nie ma treści "
+        "i zawiera Cache-Control: no-store."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule or assignment not found"),
+        409: _problem_response("schedule-state-conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def delete_assignment(
+    schedule_id: PathId,
+    assignment_id: PathId,
+    identity: ManagerIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> Response:
+    """Delete one assignment in the requested closed schedule."""
+    parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
+    parsed_assignment_id = _parse_path_id(assignment_id, "assignment_id")
+    try:
+        delete_shift_assignment(
+            session, parsed_schedule_id, parsed_assignment_id, actor_role=identity.role
+        )
+    except AssignmentWriteForbidden:
+        raise AuthHttpError(
+            403, "about:blank", "Odmowa dostępu", "Brak uprawnienia."
+        ) from None
+    except (AssignmentScheduleNotFound, AssignmentNotFound):
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono przydziału", "Zasób nie istnieje."
+        ) from None
+    except AssignmentScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Przydziały można usuwać tylko w grafiku closed.",
+        ) from None
+
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})

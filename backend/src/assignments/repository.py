@@ -159,3 +159,22 @@ class ShiftAssignmentRepository:
                 ShiftAssignment.id == assignment_id,
             )
         ).one_or_none()
+
+    def get_for_schedule_for_update(
+        self, schedule_id: int, assignment_id: int
+    ) -> ShiftAssignment | None:
+        """Lock an assignment selected only through its schedule's requirement."""
+        return self.session.scalar(
+            select(ShiftAssignment)
+            .join(ShiftRequirement)
+            .where(
+                ShiftRequirement.schedule_id == schedule_id,
+                ShiftAssignment.id == assignment_id,
+            )
+            .with_for_update(of=ShiftAssignment)
+            .execution_options(populate_existing=True)
+        )
+
+    def delete(self, assignment: ShiftAssignment) -> None:
+        """Stage deletion without committing the caller's transaction."""
+        self.session.delete(assignment)

@@ -442,7 +442,7 @@ def test_openapi_has_only_read_routes_and_public_schema(assignment_api) -> None:
     list_path = "/api/v1/schedules/{schedule_id}/shift-assignments"
     detail_path = f"{list_path}/{{assignment_id}}"
     assert set(paths[list_path]) == {"get", "post"}
-    assert set(paths[detail_path]) == {"get"}
+    assert set(paths[detail_path]) == {"get", "delete"}
     for path in (list_path, detail_path):
         operation = paths[path]["get"]
         assert operation["security"] == [{"BearerAuth": []}]

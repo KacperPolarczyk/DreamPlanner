@@ -706,13 +706,13 @@ def test_only_recognized_database_conflicts_are_mapped() -> None:
     assert _assignment_db_conflict(exc) is None
 
 
-def test_openapi_documents_post_without_delete_or_patch(assignment_api) -> None:
+def test_openapi_documents_post_without_patch(assignment_api) -> None:
     app, _, _, _ = assignment_api
     paths = app.openapi()["paths"]
     list_path = "/api/v1/schedules/{schedule_id}/shift-assignments"
     detail_path = f"{list_path}/{{assignment_id}}"
     assert set(paths[list_path]) == {"get", "post"}
-    assert set(paths[detail_path]) == {"get"}
+    assert set(paths[detail_path]) == {"get", "delete"}
     operation = paths[list_path]["post"]
     assert operation["security"] == [{"BearerAuth": []}]
     assert {"201", "400", "401", "403", "404", "409", "422"} <= set(
