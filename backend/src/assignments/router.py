@@ -36,7 +36,12 @@ from src.assignments.service import (
     read_my_published_shift,
     read_shift_assignment,
 )
-from src.auth.dependencies import AuthHttpError, require_active_employee, require_roles
+from src.auth.dependencies import (
+    AuthHttpError,
+    require_active_employee,
+    require_manager_write,
+    require_roles,
+)
 from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
@@ -45,7 +50,7 @@ router = APIRouter(prefix="/schedules", tags=["shift-assignments"])
 employee_router = APIRouter(prefix="/me", tags=["my-shifts"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 ReadIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))]
-ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
+ManagerIdentity = Annotated[ActiveIdentity, Depends(require_manager_write)]
 EmployeeIdentity = Annotated[ActiveIdentity, Depends(require_active_employee)]
 PathId = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 MAX_BIGINT = 9223372036854775807

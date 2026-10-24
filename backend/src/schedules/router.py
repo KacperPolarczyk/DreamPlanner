@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from src.auth.dependencies import AuthHttpError, require_roles
+from src.auth.dependencies import AuthHttpError, require_manager_write, require_roles
 from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
@@ -50,7 +50,7 @@ from src.schedules.service import (
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 ReadIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))]
-ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
+ManagerIdentity = Annotated[ActiveIdentity, Depends(require_manager_write)]
 ScheduleIdPath = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 SortField = Literal["year", "-year", "month", "-month"]
 MAX_BIGINT = 9223372036854775807

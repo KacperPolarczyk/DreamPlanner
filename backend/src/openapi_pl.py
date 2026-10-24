@@ -352,6 +352,7 @@ def localize_openapi(
             if protected or path in {
                 "/api/v1/auth/sessions",
                 "/api/v1/auth/sessions/current/refresh",
+                "/api/v1/health/ready",
             }:
                 responses["503"] = _problem_response(
                     RESPONSE_DESCRIPTIONS["503"], ordinary_problem
@@ -394,11 +395,14 @@ def localize_openapi(
                     response["description"] = _response_description(
                         code, response.get("description", "")
                     )
+                if path == "/api/v1/health/ready" and code == "503":
+                    response["description"] = "Baza danych jest niedostępna."
                 headers = response.setdefault("headers", {})
                 if (
                     protected
                     or public_auth
                     or (path == "/api/v1/health" and code == "500")
+                    or (path == "/api/v1/health/ready" and code in {"500", "503"})
                 ):
                     headers["Cache-Control"] = deepcopy(NO_STORE)
                 if code == "401" and protected:

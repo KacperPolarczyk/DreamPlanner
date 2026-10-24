@@ -199,10 +199,12 @@ def test_lock_precedes_both_fresh_child_checks(deletion_api) -> None:
     finally:
         event.remove(Session, "do_orm_execute", capture_select)
     assert response.status_code == 204
-    assert "FROM schedules" in statements[0]
-    assert "FOR UPDATE" in statements[0]
-    assert "FROM shift_requirements" in statements[1]
-    assert "FROM availability_submissions" in statements[2]
+    assert "FROM users" in statements[0]
+    assert "FOR SHARE OF users" in statements[0]
+    assert "FROM schedules" in statements[1]
+    assert "FOR UPDATE" in statements[1]
+    assert "FROM shift_requirements" in statements[2]
+    assert "FROM availability_submissions" in statements[3]
 
 
 @pytest.mark.parametrize(

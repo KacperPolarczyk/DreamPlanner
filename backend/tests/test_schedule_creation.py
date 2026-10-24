@@ -18,6 +18,7 @@ from src.core.database import Base, get_session
 from src.main import create_app
 from src.schedules.models import Schedule
 from src.schedules.service import _period_conflict
+from src.users.models import Role, User
 
 PATH = "/api/v1/schedules"
 CREATOR_ID = 9007199254740993
@@ -38,7 +39,29 @@ def creation_api(monkeypatch: pytest.MonkeyPatch):
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine, tables=[Schedule.__table__])
+
+    @event.listens_for(engine, "connect")
+    def register_btrim(connection, record) -> None:
+        """Support the User check constraints in SQLite."""
+        connection.create_function("btrim", 1, str.strip)
+
+    Base.metadata.create_all(
+        engine, tables=[Role.__table__, User.__table__, Schedule.__table__]
+    )
+    with Session(engine) as session:
+        session.add(Role(id=1, code="manager", name="Manager"))
+        session.add(
+            User(
+                id=CREATOR_ID,
+                role_id=1,
+                email="manager@example.test",
+                full_name="Manager",
+                password_hash="unused",
+                is_active=True,
+                activated_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
     next_id = FIRST_ID
 
     def assign_sqlite_identity(mapper, connection, schedule) -> None:

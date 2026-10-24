@@ -3,6 +3,7 @@
 import os
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from threading import Event
@@ -10,7 +11,7 @@ from time import monotonic
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, event, select, text
+from sqlalchemy import create_engine, delete, event, select, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,6 +21,8 @@ from src.assignments.service import (
     create_shift_assignment,
     delete_shift_assignment,
 )
+from src.auth.dependencies import AuthHttpError, require_manager_write
+from src.auth.session_service import ActiveIdentity
 from src.positions.models import Position
 from src.schedules.models import Schedule, ShiftRequirement
 from src.schedules.service import (
@@ -84,10 +87,11 @@ def database() -> Iterator[tuple[Engine, sessionmaker[Session]]]:
         engine.dispose()
 
 
-@pytest.fixture
-def case(database: tuple[Engine, sessionmaker[Session]]):
-    """Create a separate schedule and actors for each race."""
+@contextmanager
+def _case_scope(database: tuple[Engine, sessionmaker[Session]]):
+    """Remove only records created in this scope after its races finish."""
     _, factory = database
+    created: list[tuple[int, int, int, tuple[int, ...]]] = []
 
     def create(*, status: str = "closed") -> dict[str, int]:
         with factory() as session:
@@ -161,9 +165,95 @@ def case(database: tuple[Engine, sessionmaker[Session]]):
                 "other_worker": workers[1].id,
             }
             session.commit()
+            created.append(
+                (
+                    schedule.id,
+                    manager.id,
+                    position.id,
+                    (manager.id, admin.id, *(worker.id for worker in workers)),
+                )
+            )
             return result
 
-    return create
+    try:
+        yield create
+    finally:
+        if created:
+            with factory() as session:
+                for schedule_id, manager_id, position_id, user_ids in reversed(created):
+                    removed_schedule = session.execute(
+                        delete(Schedule).where(
+                            Schedule.id == schedule_id,
+                            Schedule.created_by == manager_id,
+                        )
+                    ).rowcount
+                    if removed_schedule != 1:
+                        raise AssertionError(
+                            "The case schedule was not uniquely removed"
+                        )
+                    removed_position = session.execute(
+                        delete(Position).where(
+                            Position.id == position_id,
+                            Position.name.like("Race position %"),
+                        )
+                    ).rowcount
+                    if removed_position != 1:
+                        raise AssertionError(
+                            "The case position was not uniquely removed"
+                        )
+                    removed_users = session.execute(
+                        delete(User).where(
+                            User.id.in_(user_ids),
+                            User.email.like("race-%@example.test"),
+                        )
+                    ).rowcount
+                    if removed_users != 4:
+                        raise AssertionError("The case users were not uniquely removed")
+                session.commit()
+
+
+@pytest.fixture
+def case(database: tuple[Engine, sessionmaker[Session]]):
+    """Create and dispose of only this test's schedule and actors."""
+    with _case_scope(database) as create:
+        yield create
+
+
+def test_case_scope_reuses_period_without_touching_existing_rows(database) -> None:
+    """Two cases leave the same baseline and can claim the same free month."""
+    _, factory = database
+
+    def counts() -> tuple[int, ...]:
+        with factory() as session:
+            return tuple(
+                session.scalar(text(f"SELECT count(*) FROM {table}"))
+                for table in (
+                    "users",
+                    "positions",
+                    "schedules",
+                    "shift_requirements",
+                    "shift_assignments",
+                )
+            )
+
+    baseline = counts()
+    periods = []
+    for _ in range(2):
+        with _case_scope(database) as create:
+            data = create(status="closed")
+            with factory() as session:
+                periods.append(
+                    session.execute(
+                        select(Schedule.year, Schedule.month).where(
+                            Schedule.id == data["schedule"]
+                        )
+                    ).one()
+                )
+            assert counts() == tuple(
+                before + added for before, added in zip(baseline, (4, 1, 1, 1, 1))
+            )
+        assert counts() == baseline
+    assert periods[0] == periods[1]
 
 
 def _matches(statement: str, kind: str) -> bool:
@@ -266,6 +356,57 @@ def _publish(data):
     return lambda session: publish_schedule(
         session, data["schedule"], actor_id=data["manager"]
     )
+
+
+@pytest.mark.parametrize("admin_action", ["change_role", "deactivate"])
+@pytest.mark.parametrize("winner", ["admin", "manager"])
+def test_manager_write_guard_orders_role_and_account_changes(
+    database, case, admin_action: str, winner: str
+) -> None:
+    """Serialize a write guard and admin mutation on independent transactions."""
+    data = case(status="draft")
+    admin = (
+        (
+            lambda session: change_role(
+                session, data["admin"], data["manager"], "employee"
+            )
+        )
+        if admin_action == "change_role"
+        else (
+            lambda session: deactivate_account(session, data["admin"], data["manager"])
+        )
+    )
+
+    def guarded_open(session: Session) -> Schedule:
+        require_manager_write(
+            ActiveIdentity(data["manager"], uuid4(), "manager"), session
+        )
+        return open_collection(session, data["schedule"])
+
+    if winner == "admin":
+        first, second = _race(
+            database,
+            admin,
+            guarded_open,
+            first_lock="user_update",
+            second_wait="user_share",
+        )
+        assert first.error is None
+        assert isinstance(second.error, AuthHttpError)
+        assert second.error.status == 403
+        expected_status = "draft"
+    else:
+        first, second = _race(
+            database,
+            guarded_open,
+            admin,
+            first_lock="user_share",
+            second_wait="user_update",
+        )
+        assert first.error is None and second.error is None
+        expected_status = "collecting"
+
+    assert _state(database, data)[0] == expected_status
 
 
 @pytest.mark.parametrize("winner", ["post", "publication"])

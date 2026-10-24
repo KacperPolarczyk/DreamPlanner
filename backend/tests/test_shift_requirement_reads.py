@@ -19,6 +19,7 @@ from src.main import create_app
 from src.positions.models import Position
 from src.schedules.models import Schedule, ShiftRequirement
 from src.schedules.repository import ScheduleRepository
+from src.users.models import Role, User
 
 PATH = "/api/v1/schedules"
 SCHEDULE_ID = 45
@@ -52,6 +53,8 @@ def shift_requirements_api(monkeypatch: pytest.MonkeyPatch):
     Base.metadata.create_all(
         engine,
         tables=[
+            Role.__table__,
+            User.__table__,
             Position.__table__,
             Schedule.__table__,
             ShiftRequirement.__table__,
@@ -59,6 +62,18 @@ def shift_requirements_api(monkeypatch: pytest.MonkeyPatch):
         ],
     )
     with Session(engine) as session:
+        session.add(Role(id=1, code="manager", name="Manager"))
+        session.add(
+            User(
+                id=42,
+                role_id=1,
+                email="manager@example.test",
+                full_name="Manager",
+                password_hash="unused",
+                is_active=True,
+                activated_at=NOW,
+            )
+        )
         session.add_all(
             [
                 Position(id=7, name="Kasjer", is_active=True),

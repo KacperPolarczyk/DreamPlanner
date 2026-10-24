@@ -10,7 +10,7 @@ from src.main import create_app
 from src.openapi_pl import SCHEMA_DESCRIPTIONS, TAG_DESCRIPTIONS
 
 EXPECTED_OPERATIONS_SHA256 = (
-    "a46eb4c0f96edb82dce2ed860d4ac923b2284fa2eb15fb9f08ad5bf03a4d247d"
+    "89b6b7f935eb6e22cb7b2fbd42a8a4e91a7fc5d14866a3bf515b5e625b74d5f2"
 )
 EXPECTED_FIELDS_SHA256 = (
     "6c8aef38bc85c33a667f6733e58502dd6aef30bdea544a2d9680a3d1df808713"
@@ -29,7 +29,7 @@ def test_served_openapi_json_contains_localized_schema() -> None:
     assert response.status_code == 200
     schema = response.json()
     assert schema["info"]["description"].startswith("DreamPlanner: API do")
-    assert len(schema["paths"]) == 33
+    assert len(schema["paths"]) == 34
     assert len(schema["components"]["schemas"]) == 38
 
 
@@ -50,8 +50,8 @@ def test_all_public_openapi_descriptions_are_reviewed_polish_metadata() -> None:
     for component in components.values():
         for field in component.get("properties", {}).values():
             assert field["description"]
-    assert len(schema["paths"]) == 33
-    assert sum(map(len, schema["paths"].values())) == 47
+    assert len(schema["paths"]) == 34
+    assert sum(map(len, schema["paths"].values())) == 48
     for methods in schema["paths"].values():
         for operation in methods.values():
             assert operation["summary"] and operation["description"]
@@ -111,6 +111,7 @@ def test_response_headers_and_problem_schemas_match_the_http_contract() -> None:
                 in {
                     "/api/v1/auth/sessions",
                     "/api/v1/auth/sessions/current/refresh",
+                    "/api/v1/health/ready",
                 }
             )
             for code, response in responses.items():
@@ -119,6 +120,7 @@ def test_response_headers_and_problem_schemas_match_the_http_contract() -> None:
                     protected
                     or public_auth
                     or (path == "/api/v1/health" and code == "500")
+                    or (path == "/api/v1/health/ready" and code in {"500", "503"})
                 ):
                     assert headers["Cache-Control"]["schema"]["const"] == "no-store"
                 if code == "401":

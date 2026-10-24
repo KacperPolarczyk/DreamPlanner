@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from src.auth.jwt_codec import InvalidAccessToken, JwtCodec
 from src.auth.session_service import ActiveIdentity, InvalidSession, validate_session
 from src.core.database import get_session
+from src.users.repository import UserRepository
 
 RoleCode = Literal["admin", "manager", "employee"]
 SessionDependency = Annotated[Session, Depends(get_session)]
@@ -166,3 +167,21 @@ def require_roles(*allowed_roles: RoleCode) -> Callable[..., ActiveIdentity]:
         return identity
 
     return check_role
+
+
+ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
+
+
+def require_manager_write(
+    identity: ManagerIdentity, session: SessionDependency
+) -> ActiveIdentity:
+    """Hold a fresh manager account lock through the route's write transaction."""
+    rows = UserRepository(session).lock_users_for_share({identity.user_id})
+    if (
+        not rows
+        or rows[0][1] != "manager"
+        or not rows[0][0].is_active
+        or rows[0][0].activated_at is None
+    ):
+        raise AuthHttpError(403, "about:blank", "Odmowa dostępu", "Brak uprawnienia.")
+    return identity

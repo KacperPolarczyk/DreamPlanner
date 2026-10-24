@@ -159,6 +159,54 @@ Uruchamiaj polecenia Alembic z katalogu `backend/`, po ustawieniu
 importy przyszłych modeli ORM do metadanych Alembic. Obecnie nie ma modeli
 biznesowych ani migracji tabel. Migracje nie uruchamiają się przy starcie API.
 
+## Izolowane środowisko etapu 16.3.2B
+
+`compose.isolated.yaml` tworzy osobny projekt `dreamplanner-stage1632b`, wolumen
+`dreamplanner-stage1632b_isolated_postgres_data` oraz dwie bazy w nowym klastrze:
+`dreamplanner_stage1632b` dla API i `dreamplanner_test_publication_races_134` dla
+testów współbieżności. Nie korzysta z wolumenu ani kontenera developerskiego.
+Porty hosta są związane z `127.0.0.1` i domyślnie wynoszą `8001` oraz `55432`.
+
+Skopiuj `docker/isolated.example.env` do `.env.isolated`, ustaw pięć różnych,
+losowych haseł i klucz JWT oraz zachowaj zgodność haseł w trzech URL-ach.
+Użyj znaków bezpiecznych w URL albo zakoduj hasła w URL procentowo. Lokalny
+`.env.isolated` jest ignorowany przez Git; nie dodawaj go do obrazu. Przed
+pierwszym startem sprawdź, czy projekt, wolumen i porty nie istnieją oraz czy
+URL-e wskazują wyłącznie nowy klaster. Nie zmieniaj haseł dla istniejącego
+wolumenu, zakładając, że skrypt inicjalizacji wykona się ponownie.
+
+Nowa aplikacja używa roli `dreamplanner_isolated_app` z dostępem tylko do bazy
+aplikacji. Rola `dreamplanner_isolated_migration` ma tam uprawnienia do migracji.
+Testy używają wymaganych przez fixtury ról `dreamplanner_app` i
+`dreamplanner_migration`, które mają dostęp tylko do bazy testowej. Role
+aplikacyjne nie dostają prawa `CONNECT` do bazy testowej, a role testowe do
+bazy aplikacji. Konto administracyjne PostgreSQL służy jedynie inicjalizacji.
+
+Po potwierdzeniu izolacji uruchom środowisko jawnie:
+
+```sh
+docker compose --env-file .env.isolated -p dreamplanner-stage1632b -f compose.isolated.yaml config --quiet
+docker compose --env-file .env.isolated -p dreamplanner-stage1632b -f compose.isolated.yaml up -d --wait
+```
+
+Migracje nie są wykonywane przy starcie aplikacji. Uruchom je oddzielnie,
+po upewnieniu się, że URL-e w `.env.isolated` wskazują nowe bazy. Skrypt
+sprawdza nazwę bazy, rolę, host, port i sterownik przed wywołaniem Alembic:
+
+```sh
+uv run --frozen --env-file .env.isolated python docker/migrate-isolated.py app
+uv run --frozen --env-file .env.isolated python docker/migrate-isolated.py test
+```
+
+Liveness: `http://127.0.0.1:8001/api/v1/health`. Readiness:
+`http://127.0.0.1:8001/api/v1/health/ready`; wykonuje `SELECT 1` z limitem
+połączenia i zapytania, zwracając 503 Problem Details, gdy baza jest niedostępna.
+Test wyścigów uruchamiaj dopiero po migracji bazy testowej:
+
+```sh
+uv run --frozen --env-file .env.isolated pytest tests/integration/test_publication_races_postgres.py -k manager_write_guard -v
+```
+
 Kontrole:
 
 ```sh
