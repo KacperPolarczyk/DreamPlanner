@@ -1,4 +1,4 @@
-"""Read queries for monthly schedules."""
+"""Persistence and read queries for monthly schedules."""
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from src.schedules.models import Schedule
 
 
 class ScheduleRepository:
-    """Read schedules with one request-scoped database session."""
+    """Access schedules with one request-scoped database session."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -15,6 +15,10 @@ class ScheduleRepository:
     def get_by_id(self, schedule_id: int) -> Schedule | None:
         """Return a schedule regardless of status or creator."""
         return self.session.get(Schedule, schedule_id)
+
+    def add(self, schedule: Schedule) -> None:
+        """Stage a new schedule without committing the transaction."""
+        self.session.add(schedule)
 
     def list_schedules(
         self,

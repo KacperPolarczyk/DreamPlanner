@@ -336,10 +336,10 @@ def test_employee_and_unauthenticated_callers_cannot_read(schedules_api) -> None
     )
 
 
-def test_openapi_documents_only_schedule_reads(schedules_api) -> None:
+def test_openapi_documents_schedule_reads(schedules_api) -> None:
     app, _, _, _ = schedules_api
     paths = app.openapi()["paths"]
-    assert set(paths[PATH]) == {"get"}
+    assert set(paths[PATH]) == {"get", "post"}
     assert set(paths[f"{PATH}/{{schedule_id}}"]) == {"get"}
     assert not any(
         path.startswith(f"{PATH}/") and path != f"{PATH}/{{schedule_id}}"

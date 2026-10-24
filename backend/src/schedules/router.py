@@ -13,11 +13,18 @@ from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
 from src.schedules.models import Schedule
 from src.schedules.repository import ScheduleRepository
-from src.schedules.schemas import ScheduleListResponse, ScheduleResponse, ScheduleStatus
+from src.schedules.schemas import (
+    CreateScheduleInput,
+    ScheduleListResponse,
+    ScheduleResponse,
+    ScheduleStatus,
+)
+from src.schedules.service import SchedulePeriodConflict, create_schedule
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 ReadIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))]
+ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
 ScheduleIdPath = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 SortField = Literal["year", "-year", "month", "-month"]
 MAX_BIGINT = 9223372036854775807
@@ -70,6 +77,46 @@ def _parse_schedule_id(schedule_id: str) -> int:
             [{"type": "value_error", "loc": ("path", "schedule_id")}]
         )
     return parsed_id
+
+
+@router.post(
+    "",
+    status_code=201,
+    response_model=ScheduleResponse,
+    summary="Utwórz miesięczny grafik",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `manager`. Tworzy pusty grafik "
+        "w stanie `draft` dla dowolnego miesiąca z lat 2000–2100. "
+        "Okres jest globalnie unikalny. Sukces zwraca `Location` i "
+        "`Cache-Control: no-store`."
+    ),
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        409: _problem_response("schedule-period-conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def create_new_schedule(
+    data: CreateScheduleInput,
+    response: Response,
+    identity: ManagerIdentity,
+    session: SessionDependency,
+) -> ScheduleResponse:
+    """Create a monthly draft under the current manager's identity."""
+    try:
+        schedule = create_schedule(session, data.year, data.month, identity.user_id)
+    except SchedulePeriodConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-period-conflict",
+            "Okres grafiku jest już zajęty",
+            "Grafik dla tego roku i miesiąca już istnieje.",
+        ) from None
+    response.headers["Location"] = f"/api/v1/schedules/{schedule.id}"
+    response.headers["Cache-Control"] = "no-store"
+    return _public_schedule(schedule)
 
 
 @router.get(

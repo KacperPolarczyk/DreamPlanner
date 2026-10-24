@@ -3,11 +3,20 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 ScheduleStatus = Literal[
     "draft", "collecting", "collection_closed", "closed", "published"
 ]
+
+
+class CreateScheduleInput(BaseModel):
+    """The exact year and month requested for a new schedule."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    year: int = Field(strict=True, ge=2000, le=2100)
+    month: int = Field(strict=True, ge=1, le=12)
 
 
 class ScheduleResponse(BaseModel):
