@@ -525,7 +525,7 @@ def test_openapi_documents_availability_endpoints_and_query_contract(availabilit
     assert set(paths[detail_path]) == {"get", "patch", "delete"}
     operation = paths[list_path]["get"]
     assert operation["security"] == [{"BearerAuth": []}]
-    assert "1–19 cyfr ASCII" in operation["description"]
+    assert "1-19 cyfr ASCII" in operation["description"]
     assert {"200", "401", "403", "404", "422"} <= set(operation["responses"])
     assert {
         parameter["name"]

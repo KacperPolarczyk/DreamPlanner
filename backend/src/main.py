@@ -13,7 +13,9 @@ from src.api import api_router
 from src.auth.dependencies import AuthHttpError
 from src.auth.jwt_codec import JwtCodec
 from src.auth.rate_limits import AuthRateLimits, RateLimited
+from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.core.config import Settings
+from src.openapi_pl import localize_openapi
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +78,11 @@ def create_app() -> FastAPI:
     @application.exception_handler(HTTPException)
     def handle_http_error(request: Request, exc: HTTPException) -> JSONResponse:
         """Render framework HTTP errors while retaining their response headers."""
+        titles = {404: "Nie znaleziono", 405: "Metoda niedozwolona"}
         try:
-            title = HTTPStatus(exc.status_code).phrase
+            title = titles.get(exc.status_code, HTTPStatus(exc.status_code).phrase)
         except ValueError:
-            title = "HTTP Error"
+            title = "Błąd HTTP"
         detail = (
             "Wystąpił błąd serwera."
             if exc.status_code >= 500
@@ -148,6 +151,21 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
     application.include_router(api_router)
+    generate_openapi = application.openapi
+
+    def openapi() -> dict:
+        """Return the localized API contract with documented shared responses."""
+        if application.openapi_schema is None:
+            schema = generate_openapi()
+            localize_openapi(
+                schema,
+                ordinary_problem=ProblemDetails.model_json_schema(),
+                validation_problem=validation_problem_schema(),
+            )
+            application.openapi_schema = schema
+        return application.openapi_schema
+
+    application.openapi = openapi
     return application
 
 

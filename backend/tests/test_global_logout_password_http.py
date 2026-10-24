@@ -270,7 +270,9 @@ def test_openapi_marks_both_commands_as_bearer_protected(browser_app) -> None:
     for path, method in ((LOGOUT, "delete"), (CHANGE, "post")):
         operation = paths[path][method]
         assert operation["security"] == [{"BearerAuth": []}]
-        assert operation["responses"]["204"]["description"] == "Successful Response"
+        assert operation["responses"]["204"]["description"] == (
+            "Operacja zakończona bez treści odpowiedzi."
+        )
         for status in ("401", "403"):
             assert (
                 "application/problem+json" in operation["responses"][status]["content"]

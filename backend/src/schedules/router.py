@@ -171,7 +171,7 @@ def _parse_requirement_id(requirement_id: str) -> int:
         "`work_date ASC, start_time ASC, id ASC`; `total` liczy wyniki "
         "po filtrach przed paginacją. `work_date` wymaga `YYYY-MM-DD`, "
         "`position_id` dodatniego BIGINT, a identyfikator grafiku cyfr ASCII "
-        "w zakresie 0–9223372036854775807 (do 19 cyfr). Godziny odpowiedzi "
+        "w zakresie 0-9223372036854775807 (do 19 cyfr). Godziny odpowiedzi "
         "to `HH:MM:SS` w `Europe/Warsaw`. Odpowiedź zawiera "
         "`Cache-Control: no-store`."
     ),
@@ -273,7 +273,7 @@ def list_shift_requirements(
         "pozycję tylko wtedy, gdy należy do wskazanego grafiku. Odczyt jest "
         "dozwolony w każdym statusie grafiku oraz dla nieaktywnego stanowiska. "
         "Identyfikatory ścieżki to cyfry ASCII w zakresie "
-        "0–9223372036854775807 (do 19 cyfr). Godziny odpowiedzi to "
+        "0-9223372036854775807 (do 19 cyfr). Godziny odpowiedzi to "
         "`HH:MM:SS` w `Europe/Warsaw`. "
         "Odpowiedź zawiera `Cache-Control: no-store`."
     ),
@@ -320,7 +320,7 @@ def read_shift_requirement(
         "Wymaga roli manager i grafiku draft. Daty i lokalne godziny "
         "wymagają `YYYY-MM-DD` i `HH:MM:SS` w `Europe/Warsaw`; przedziały "
         "mogą się nakładać. Identyfikator grafiku to cyfry ASCII w zakresie "
-        "0–9223372036854775807 (do 19 cyfr), a `position_id` to dodatni "
+        "0-9223372036854775807 (do 19 cyfr), a `position_id` to dodatni "
         "dziesiętny string BIGINT. "
         "Odpowiedź zwraca Location oraz Cache-Control: no-store."
     ),
@@ -407,7 +407,7 @@ def create_new_shift_requirement(
         "Jeśli istnieją przydziały, dozwolona jest zmiana wyłącznie notatki lub "
         "wartości strukturalnych bez rzeczywistej zmiany. Odpowiedź zawiera "
         "Cache-Control: no-store. Identyfikatory ścieżki to cyfry ASCII w "
-        "zakresie 0–9223372036854775807 (do 19 cyfr); `position_id` jest "
+        "zakresie 0-9223372036854775807 (do 19 cyfr); `position_id` jest "
         "dodatnim stringiem BIGINT. Daty i godziny wymagają `YYYY-MM-DD` oraz "
         "`HH:MM:SS` w `Europe/Warsaw`."
     ),
@@ -500,7 +500,7 @@ def update_existing_shift_requirement(
         "Wymaga aktywnej roli `manager` oraz grafiku `draft`. Usuwa wyłącznie "
         "zapotrzebowanie bez powiązanych przydziałów; odpowiedź 204 nie ma "
         "treści i zawiera `Cache-Control: no-store`. Identyfikatory ścieżki "
-        "to cyfry ASCII w zakresie 0–9223372036854775807 (do 19 cyfr)."
+        "to cyfry ASCII w zakresie 0-9223372036854775807 (do 19 cyfr)."
     ),
     responses={
         204: _success_response(204),
@@ -557,7 +557,7 @@ def delete_existing_shift_requirement(
     summary="Utwórz miesięczny grafik",
     description=(
         "Wymaga Bearer JWT i aktywnej roli `manager`. Tworzy pusty grafik "
-        "w stanie `draft` dla dowolnego miesiąca z lat 2000–2100. "
+        "w stanie `draft` dla dowolnego miesiąca z lat 2000-2100. "
         "Okres jest globalnie unikalny. Sukces zwraca `Location` i "
         "`Cache-Control: no-store`."
     ),

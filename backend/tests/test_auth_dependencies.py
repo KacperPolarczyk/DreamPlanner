@@ -196,6 +196,9 @@ def test_protected_dependency_declares_bearer_in_openapi(protected_app) -> None:
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
+        "description": (
+            "Token dostępu JWT w nagłówku Authorization ze schematem Bearer."
+        ),
     }
     for path in ("/test/identity", "/test/admin", "/test/staff"):
         assert schema["paths"][path]["get"]["security"] == [{"BearerAuth": []}]

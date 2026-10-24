@@ -32,11 +32,27 @@ def test_missing_route_and_disallowed_method_use_problem_details() -> None:
         disallowed = client.post("/api/v1/health")
         healthy = client.get("/api/v1/health")
 
-    _assert_problem(missing, 404)
-    _assert_problem(disallowed, 405)
+    assert _assert_problem(missing, 404)["title"] == "Nie znaleziono"
+    assert _assert_problem(disallowed, 405)["title"] == "Metoda niedozwolona"
     assert disallowed.headers["allow"] == "GET"
     assert healthy.status_code == 200
     assert healthy.json() == {"status": "ok"}
+
+
+def test_missing_jwt_signing_configuration_returns_documented_503() -> None:
+    """A protected request receives the safe conditional service problem."""
+    app = create_app()
+    app.state.jwt_codec = None
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/users/me", headers={"Authorization": "Bearer test-token"}
+        )
+    assert _assert_problem(response, 503) == {
+        "type": "about:blank",
+        "title": "Usługa niedostępna",
+        "status": 503,
+        "detail": "Uwierzytelnianie jest niedostępne.",
+    }
 
 
 def test_unexpected_error_is_logged_but_redacted(

@@ -222,8 +222,8 @@ def _openapi_query_parameters() -> list[dict[str, object]]:
             "in": "query",
             "required": False,
             "description": (
-                "Dostępny wyłącznie dla ról manager i admin; 1–19 cyfr ASCII, "
-                "wartość 1–9223372036854775807."
+                "Dostępny wyłącznie dla ról manager i admin; 1-19 cyfr ASCII, "
+                "wartość 1-9223372036854775807."
             ),
             "schema": {"type": "string", "pattern": "^[0-9]{1,19}$"},
         },
@@ -246,8 +246,8 @@ def _openapi_query_parameters() -> list[dict[str, object]]:
         "wszystkie. Odczyt działa w każdym stanie grafiku. Lista nie zawiera "
         "entries i używa stałego sortowania user_id ASC, id ASC. Filtr "
         "user_id jest dostępny wyłącznie managerowi i adminowi; employee "
-        "otrzymuje 403. schedule_id: 1–19 cyfr ASCII, zakres BIGINT 0–"
-        "9223372036854775807. limit: 1–100, offset: 0–BIGINT, state: draft "
+        "otrzymuje 403. schedule_id: 1-19 cyfr ASCII, zakres BIGINT 0-"
+        "9223372036854775807. limit: 1-100, offset: 0-BIGINT, state: draft "
         "lub submitted; total liczy widoczne rekordy przed paginacją. "
         "Identyfikatory BIGINT w JSON są stringami. Chroniona odpowiedź ma "
         "Cache-Control: no-store."
@@ -303,9 +303,9 @@ def list_availability_submissions(
         "Wymaga Bearer JWT i aktualnej roli employee, manager lub admin. "
         "Employee może odczytać wyłącznie własny zasób; cudza i nieistniejąca "
         "deklaracja dają ten sam 404. Odczyt działa w każdym stanie grafiku. "
-        "schedule_id i submission_id: 1–19 cyfr ASCII, zakres BIGINT 0–"
+        "schedule_id i submission_id: 1-19 cyfr ASCII, zakres BIGINT 0-"
         "9223372036854775807. Identyfikatory BIGINT w JSON są stringami. "
-        "Entries są sortowane po work_date, start_time i id; daty mają format "
+        "Wpisy są sortowane po work_date, start_time i id; daty mają format "
         "YYYY-MM-DD, godziny lokalne Europe/Warsaw HH:MM:SS. Odpowiedź ma "
         "Cache-Control: no-store."
     ),
@@ -364,8 +364,8 @@ def read_availability_submission(
     description=(
         "Dostępne wyłącznie dla aktywnego employee. Tworzy jedną własną "
         "deklarację dla grafiku w stanie collecting. Odpowiedź po commit ma "
-        "Cache-Control: no-store i Location. schedule_id: 1–19 cyfr ASCII, "
-        "zakres BIGINT 0–9223372036854775807. Body wymaga entries; submit "
+        "Cache-Control: no-store i Location. schedule_id: 1-19 cyfr ASCII, "
+        "zakres BIGINT 0-9223372036854775807. Treść żądania wymaga entries; submit "
         "jest ścisłym boolean, domyślnie false. Wpisy wymagają daty "
         "YYYY-MM-DD z miesiąca grafiku, godzin HH:MM:SS w Europe/Warsaw, "
         "status available albo unavailable. Przedziały są półotwarte, mogą "
@@ -439,8 +439,8 @@ def create_availability_submission(
     summary="Edytuj lub prześlij własną deklarację dyspozycyjności",
     description=(
         "Dostępne wyłącznie dla aktywnego employee i własnej deklaracji. "
-        "Zapis wymaga grafiku collecting. schedule_id i submission_id: 1–19 "
-        "cyfr ASCII, zakres BIGINT 0–9223372036854775807. Pole entries, "
+        "Zapis wymaga grafiku collecting. schedule_id i submission_id: 1-19 "
+        "cyfr ASCII, zakres BIGINT 0-9223372036854775807. Pole entries, "
         "jeśli podane, zastępuje całą listę: data YYYY-MM-DD w miesiącu "
         "grafiku, godziny HH:MM:SS w Europe/Warsaw, status available albo "
         "unavailable, bez nakładania i niejednoznacznych lub nieistniejących "
@@ -521,7 +521,7 @@ def update_availability_submission(
         "deklaracji w grafiku collecting. Manager i admin otrzymują 403; "
         "brak lub cudza deklaracja dają ten sam 404. Odpowiedź 204 nie ma "
         "treści i zawiera Cache-Control: no-store. schedule_id i submission_id: "
-        "1–19 cyfr ASCII, zakres BIGINT 0–9223372036854775807. Niepuste "
+        "1-19 cyfr ASCII, zakres BIGINT 0-9223372036854775807. Niepuste "
         "body daje 422."
     ),
     responses={

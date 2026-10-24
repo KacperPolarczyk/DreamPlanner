@@ -64,7 +64,7 @@ def _public_position(position: Position) -> PositionResponse:
     summary="Utwórz stanowisko",
     description=(
         "Wymaga Bearer JWT i aktywnej roli `admin`. Nazwa po obcięciu białych "
-        "znaków brzegowych musi mieć 1–120 znaków. Unikalność nazwy jest "
+        "znaków brzegowych musi mieć 1-120 znaków. Unikalność nazwy jest "
         "wrażliwa na wielkość liter i obejmuje stanowiska nieaktywne."
     ),
     responses={
@@ -126,7 +126,7 @@ def list_positions(
         Query(
             description=(
                 "Dosłowny fragment nazwy bez względu na wielkość liter; "
-                "po obcięciu białych znaków brzegowych wymagane 1–120 znaków."
+                "po obcięciu białych znaków brzegowych wymagane 1-120 znaków."
             )
         ),
     ] = None,
@@ -205,7 +205,7 @@ def read_position(
     description=(
         "Wymaga Bearer JWT i aktywnej roli `admin`. Przyjmuje wyłącznie "
         "`name`; po obcięciu brzegowych białych znaków nazwa musi mieć "
-        "1–120 znaków. Unikalność jest wrażliwa na wielkość liter i obejmuje "
+        "1-120 znaków. Unikalność jest wrażliwa na wielkość liter i obejmuje "
         "stanowiska nieaktywne. Operacja zachowuje `is_active`."
     ),
     responses={

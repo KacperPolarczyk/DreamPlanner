@@ -295,7 +295,7 @@ def test_openapi_documents_reactivation(reactivation_app) -> None:
     assert "security" not in consumed
     assert "204" in consumed["responses"]
     assert consumed["responses"]["403"]["description"] == (
-        "HTTPS required in production"
+        "W środowisku produkcyjnym wymagany jest HTTPS."
     )
     for status in ("400", "401", "403", "422", "429"):
         assert "application/problem+json" in consumed["responses"][status]["content"]

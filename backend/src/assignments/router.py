@@ -419,9 +419,9 @@ def get_my_shift(
     description=(
         "Wymaga Bearer JWT i aktualnej roli `manager` lub `admin`; `employee` "
         "otrzymuje 403. Odczyt we wszystkich statusach grafiku. Identyfikatory "
-        "ścieżki: 1–19 cyfr ASCII, zakres 0–9223372036854775807; BIGINT w JSON "
+        "ścieżki: 1-19 cyfr ASCII, zakres 0-9223372036854775807; BIGINT w JSON "
         "jest stringiem. Filtry work_date (YYYY-MM-DD), shift_requirement_id "
-        "i user_id można łączyć. Limit 1–100, offset 0–BIGINT. Total liczy "
+        "i user_id można łączyć. Limit 1-100, offset 0-BIGINT. `total` liczy "
         "wyniki przed paginacją. Sortowanie: work_date, start_time, "
         "shift_requirement_id, assignment id rosnąco. Godziny zmiany są "
         "lokalne Europe/Warsaw, zapisane ostrzeżenie jest historyczne. "
@@ -484,7 +484,7 @@ def list_assignments(
     description=(
         "Wymaga Bearer JWT i aktualnej roli `manager` lub `admin`; `employee` "
         "otrzymuje 403. Odczyt we wszystkich statusach grafiku. Obcy przydział "
-        "daje 404. Identyfikatory: 1–19 cyfr ASCII i zakres BIGINT. Zwraca "
+        "daje 404. Identyfikatory: 1-19 cyfr ASCII i zakres BIGINT. Zwraca "
         "historyczne warning_type; assigned_at i warning_acknowledged_at są UTC "
         "RFC 3339, godziny zmiany są lokalne Europe/Warsaw. "
         "Odpowiedź ma Cache-Control: no-store."
@@ -532,7 +532,7 @@ def get_assignment(
     summary="Przypisz pracownika do zmiany",
     description=(
         "Wymaga Bearer JWT i aktualnej roli `manager`; `admin` i `employee` "
-        "otrzymują 403. Grafik musi być w stanie `closed`. Body wymaga "
+        "otrzymują 403. Grafik musi być w stanie `closed`. Treść żądania wymaga "
         "dodatnich dziesiętnych stringów BIGINT dla shift_requirement_id i "
         "user_id; warning_acknowledged jest opcjonalnym boolean (domyślnie "
         "false). Wymagany jest aktywny, aktywowany employee. Nieaktywne "
@@ -652,7 +652,7 @@ def post_assignment(
         "jego statusu ani required_workers. Przydział musi należeć do grafiku; "
         "obcy lub ponownie usuwany przydział daje 404. Nie sprawdza bieżącej "
         "aktywności pracownika ani stanowiska i nie przelicza ostrzeżeń. "
-        "Identyfikatory: 1–19 cyfr ASCII, zakres 0–9223372036854775807. "
+        "Identyfikatory: 1-19 cyfr ASCII, zakres 0-9223372036854775807. "
         "Niepuste body, także {} lub [], daje 422. Sukces 204 nie ma treści "
         "i zawiera Cache-Control: no-store."
     ),

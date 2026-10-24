@@ -295,7 +295,7 @@ def test_delete_openapi_documents_employee_rbac_and_problem_responses(create_api
         "/api/v1/schedules/{schedule_id}/availability-submissions/{submission_id}"
     ]["delete"]
     assert "employee" in operation["description"]
-    assert "1–19 cyfr ASCII" in operation["description"]
+    assert "1-19 cyfr ASCII" in operation["description"]
     assert "Niepuste body daje 422" in operation["description"]
     assert {"204", "401", "403", "404", "409", "422"} <= set(operation["responses"])
     assert "content" not in operation["responses"]["204"]

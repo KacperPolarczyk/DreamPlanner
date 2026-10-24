@@ -13,6 +13,9 @@ def test_openapi_keeps_bearer_jwt_on_protected_routes_only() -> None:
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
+        "description": (
+            "Token dostępu JWT w nagłówku Authorization ze schematem Bearer."
+        ),
     }
     for path, method in (
         ("/api/v1/auth/sessions/current", "delete"),
@@ -59,11 +62,13 @@ def test_openapi_validation_problem_matches_http_shape() -> None:
             if "422" not in responses:
                 continue
             problem = responses["422"]["content"]["application/problem+json"]["schema"]
+            if "oneOf" in problem:
+                problem = problem["oneOf"][0]
             assert problem["properties"]["type"]["const"] == (
                 "urn:dreamplanner:problem:validation-error"
             )
             assert problem["properties"]["status"]["const"] == 422
-            assert set(problem["required"]) == {"type", "title", "status", "detail"}
+            assert set(problem["required"]) >= {"type", "title", "status", "detail"}
             errors = problem["properties"]["errors"]
             assert errors["type"] == "array"
             assert set(errors["items"]["required"]) == {
