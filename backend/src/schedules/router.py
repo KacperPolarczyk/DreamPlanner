@@ -16,6 +16,7 @@ from src.schedules.models import Schedule, ShiftRequirement
 from src.schedules.repository import ScheduleRepository, ShiftRequirementRepository
 from src.schedules.schemas import (
     CreateScheduleInput,
+    CreateShiftRequirementInput,
     ScheduleListResponse,
     ScheduleResponse,
     ScheduleStatus,
@@ -23,13 +24,17 @@ from src.schedules.schemas import (
     ShiftRequirementResponse,
 )
 from src.schedules.service import (
+    PositionInactive,
+    PositionNotFound,
     ScheduleNotEmpty,
     ScheduleNotFound,
     SchedulePeriodConflict,
     ScheduleStateConflict,
+    ShiftRequirementConflict,
     close_collection,
     close_schedule,
     create_schedule,
+    create_shift_requirement,
     delete_empty_draft,
     open_collection,
 )
@@ -257,6 +262,89 @@ def read_shift_requirement(
         )
     response.headers["Cache-Control"] = "no-store"
     return _public_shift_requirement(*row)
+
+
+@router.post(
+    "/{schedule_id}/shift-requirements",
+    status_code=201,
+    response_model=ShiftRequirementResponse,
+    summary="Utwórz zapotrzebowanie na pracowników",
+    description=(
+        "Wymaga roli manager i grafiku draft. Daty i lokalne godziny "
+        "stosują kontrakt shift requirements; przedziały mogą się nakładać. "
+        "Odpowiedź zwraca Location oraz Cache-Control: no-store."
+    ),
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule or position not found"),
+        409: _problem_response(
+            "schedule-state-conflict, position-inactive or duplicate"
+        ),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def create_new_shift_requirement(
+    schedule_id: ScheduleIdPath,
+    data: CreateShiftRequirementInput,
+    response: Response,
+    identity: ManagerIdentity,
+    session: SessionDependency,
+) -> ShiftRequirementResponse:
+    """Create one staffing requirement under a locked draft schedule."""
+    try:
+        requirement, position = create_shift_requirement(
+            session,
+            _parse_schedule_id(schedule_id),
+            position_id=int(data.position_id),
+            work_date=data.work_date,
+            start_time=data.start_time,
+            end_time=data.end_time,
+            required_workers=data.required_workers,
+            note=data.note,
+        )
+    except ScheduleNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
+        ) from None
+    except ScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Zapotrzebowanie można zmieniać tylko w grafiku draft.",
+        ) from None
+    except PositionNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono stanowiska", "Stanowisko nie istnieje."
+        ) from None
+    except PositionInactive:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:position-inactive",
+            "Stanowisko jest nieaktywne",
+            "Nowe zapotrzebowanie wymaga aktywnego stanowiska.",
+        ) from None
+    except ShiftRequirementConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:shift-requirement-conflict",
+            "Zapotrzebowanie już istnieje",
+            "Zapotrzebowanie o tych samych danych już istnieje.",
+        ) from None
+    except ValueError as exc:
+        raise AuthHttpError(
+            422,
+            "urn:dreamplanner:problem:validation-error",
+            "Błędne dane wejściowe",
+            str(exc),
+        ) from None
+    response.headers["Location"] = (
+        f"/api/v1/schedules/{requirement.schedule_id}/shift-requirements/{requirement.id}"
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _public_shift_requirement(requirement, position)
 
 
 @router.post(

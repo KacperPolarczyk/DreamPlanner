@@ -109,6 +109,27 @@ class ShiftRequirementRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def get_position_for_share(self, position_id: int) -> Position | None:
+        """Lock a position against concurrent deactivation until commit."""
+        return self.session.scalar(
+            select(Position)
+            .where(Position.id == position_id)
+            .with_for_update(read=True, key_share=True)
+            .execution_options(populate_existing=True)
+        )
+
+    def add(self, requirement: ShiftRequirement) -> None:
+        """Stage a requirement in the caller's transaction."""
+        self.session.add(requirement)
+
+    def get_committed(self, requirement_id: int) -> tuple[ShiftRequirement, Position]:
+        """Return newly inserted requirement and joined position."""
+        return self.session.execute(
+            select(ShiftRequirement, Position)
+            .join(Position, Position.id == ShiftRequirement.position_id)
+            .where(ShiftRequirement.id == requirement_id)
+        ).one()
+
     def list_for_schedule(
         self,
         schedule_id: int,
