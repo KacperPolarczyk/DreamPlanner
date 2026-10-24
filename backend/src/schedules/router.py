@@ -54,6 +54,26 @@ ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
 ScheduleIdPath = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 SortField = Literal["year", "-year", "month", "-month"]
 MAX_BIGINT = 9223372036854775807
+_NO_STORE_HEADER = {
+    "Cache-Control": {
+        "description": "Protected responses are not cacheable.",
+        "schema": {"type": "string", "const": "no-store"},
+    }
+}
+
+
+def _success_response(status: int) -> dict[str, object]:
+    """Document headers returned by successful schedule operations."""
+    headers = dict(_NO_STORE_HEADER)
+    if status == 201:
+        headers["Location"] = {
+            "description": "Canonical path of the created resource.",
+            "schema": {"type": "string"},
+        }
+    return {
+        "description": "No Content" if status == 204 else "Successful Response",
+        "headers": headers,
+    }
 
 
 def _problem_response(
@@ -68,6 +88,7 @@ def _problem_response(
     return {
         "description": description,
         "content": {"application/problem+json": {"schema": schema}},
+        "headers": _NO_STORE_HEADER,
     }
 
 
@@ -155,6 +176,7 @@ def _parse_requirement_id(requirement_id: str) -> int:
         "`Cache-Control: no-store`."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Admin or manager required"),
         404: _problem_response("Schedule not found"),
@@ -256,6 +278,7 @@ def list_shift_requirements(
         "Odpowiedź zawiera `Cache-Control: no-store`."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Admin or manager required"),
         404: _problem_response("Schedule or requirement not found"),
@@ -302,6 +325,7 @@ def read_shift_requirement(
         "Odpowiedź zwraca Location oraz Cache-Control: no-store."
     ),
     responses={
+        201: _success_response(201),
         400: _problem_response("Invalid JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
@@ -388,6 +412,7 @@ def create_new_shift_requirement(
         "`HH:MM:SS` w `Europe/Warsaw`."
     ),
     responses={
+        200: _success_response(200),
         400: _problem_response("Invalid JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
@@ -478,6 +503,7 @@ def update_existing_shift_requirement(
         "to cyfry ASCII w zakresie 0–9223372036854775807 (do 19 cyfr)."
     ),
     responses={
+        204: _success_response(204),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
         404: _problem_response("Schedule or requirement not found"),
@@ -536,6 +562,7 @@ def delete_existing_shift_requirement(
         "`Cache-Control: no-store`."
     ),
     responses={
+        201: _success_response(201),
         400: _problem_response("Invalid JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
@@ -574,6 +601,7 @@ def create_new_schedule(
         "innego managera. Bez `sort`: najnowszy okres pierwszy."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Admin or manager required"),
         422: _problem_response("validation-error", validation=True),
@@ -641,6 +669,7 @@ def list_schedules(
         "Zwraca grafik w dowolnym stanie bez danych potomnych."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Admin or manager required"),
         404: _problem_response("Schedule not found"),
@@ -674,6 +703,7 @@ def read_schedule(
         "treści i zawiera `Cache-Control: no-store`."
     ),
     responses={
+        204: _success_response(204),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
         404: _problem_response("Schedule not found"),
@@ -723,6 +753,7 @@ def delete_schedule(
         "zapotrzebowania. Odpowiedzi zawierają `Cache-Control: no-store`."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
         404: _problem_response("Schedule not found"),
@@ -767,6 +798,7 @@ def open_schedule_collection(
         "`Cache-Control: no-store`."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
         404: _problem_response("Schedule not found"),
@@ -811,6 +843,7 @@ def close_schedule_collection(
         "lub przydziałów. Odpowiedzi zawierają `Cache-Control: no-store`."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
         404: _problem_response("Schedule not found"),
@@ -860,6 +893,7 @@ def close_schedule_stage(
         "w UTC. Odpowiedzi zawierają `Cache-Control: no-store`."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Active manager required"),
         404: _problem_response("Schedule not found"),

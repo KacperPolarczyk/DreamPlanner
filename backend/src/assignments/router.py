@@ -51,6 +51,26 @@ PathId = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 MAX_BIGINT = 9223372036854775807
 ALLOWED_QUERY = {"limit", "offset", "work_date", "shift_requirement_id", "user_id"}
 MY_SHIFTS_QUERY = {"from_date", "to_date", "limit", "offset"}
+_NO_STORE_HEADER = {
+    "Cache-Control": {
+        "description": "Protected responses are not cacheable.",
+        "schema": {"type": "string", "const": "no-store"},
+    }
+}
+
+
+def _success_response(status: int) -> dict[str, object]:
+    """Document headers returned by successful assignment operations."""
+    headers = dict(_NO_STORE_HEADER)
+    if status == 201:
+        headers["Location"] = {
+            "description": "Canonical path of the created assignment.",
+            "schema": {"type": "string"},
+        }
+    return {
+        "description": "No Content" if status == 204 else "Successful Response",
+        "headers": headers,
+    }
 
 
 async def _reject_nonempty_body(request: Request) -> None:
@@ -69,6 +89,7 @@ def _problem_response(description: str, *, validation: bool = False) -> dict:
     return {
         "description": description,
         "content": {"application/problem+json": {"schema": schema}},
+        "headers": _NO_STORE_HEADER,
     }
 
 
@@ -317,6 +338,7 @@ def _parse_my_shifts_query(
     ),
     openapi_extra={"parameters": _my_shifts_query_parameters()},
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Active employee required"),
         422: _problem_response("validation-error", validation=True),
@@ -363,6 +385,7 @@ def list_my_shifts(
         "`Cache-Control: no-store`."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Active employee required"),
         404: _problem_response("Assignment not found"),
@@ -406,6 +429,7 @@ def get_my_shift(
     ),
     openapi_extra={"parameters": _query_parameters()},
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager or admin required"),
         404: _problem_response("Schedule not found"),
@@ -466,6 +490,7 @@ def list_assignments(
         "Odpowiedź ma Cache-Control: no-store."
     ),
     responses={
+        200: _success_response(200),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager or admin required"),
         404: _problem_response("Schedule or assignment not found"),
@@ -521,6 +546,7 @@ def get_assignment(
         "Sukces zwraca Location i Cache-Control: no-store."
     ),
     responses={
+        201: _success_response(201),
         400: _problem_response("Malformed JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
@@ -631,6 +657,7 @@ def post_assignment(
         "i zawiera Cache-Control: no-store."
     ),
     responses={
+        204: _success_response(204),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Manager required"),
         404: _problem_response("Schedule or assignment not found"),
