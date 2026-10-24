@@ -22,6 +22,7 @@ from src.schedules.schemas import (
     ScheduleStatus,
     ShiftRequirementListResponse,
     ShiftRequirementResponse,
+    UpdateShiftRequirementInput,
 )
 from src.schedules.service import (
     PositionInactive,
@@ -30,13 +31,16 @@ from src.schedules.service import (
     ScheduleNotFound,
     SchedulePeriodConflict,
     ScheduleStateConflict,
+    ShiftRequirementAssigned,
     ShiftRequirementConflict,
+    ShiftRequirementNotFound,
     close_collection,
     close_schedule,
     create_schedule,
     create_shift_requirement,
     delete_empty_draft,
     open_collection,
+    update_shift_requirement,
 )
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
@@ -343,6 +347,96 @@ def create_new_shift_requirement(
     response.headers["Location"] = (
         f"/api/v1/schedules/{requirement.schedule_id}/shift-requirements/{requirement.id}"
     )
+    response.headers["Cache-Control"] = "no-store"
+    return _public_shift_requirement(requirement, position)
+
+
+@router.patch(
+    "/{schedule_id}/shift-requirements/{requirement_id}",
+    response_model=ShiftRequirementResponse,
+    summary="Edytuj zapotrzebowanie na pracowników",
+    description=(
+        "Wymaga roli manager oraz grafiku draft. Zmienia tylko przesłane pola. "
+        "Jeśli istnieją przydziały, dozwolona jest zmiana wyłącznie notatki lub "
+        "wartości strukturalnych bez rzeczywistej zmiany. Odpowiedź zawiera "
+        "Cache-Control: no-store."
+    ),
+    responses={
+        400: _problem_response("Invalid JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule, requirement or position not found"),
+        409: _problem_response(
+            "schedule-state-conflict, position-inactive, assigned or duplicate"
+        ),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def update_existing_shift_requirement(
+    schedule_id: ScheduleIdPath,
+    requirement_id: Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)],
+    data: UpdateShiftRequirementInput,
+    response: Response,
+    identity: ManagerIdentity,
+    session: SessionDependency,
+) -> ShiftRequirementResponse:
+    """Update a requirement after locking its parent and row."""
+    try:
+        requirement, position = update_shift_requirement(
+            session,
+            _parse_schedule_id(schedule_id),
+            _parse_requirement_id(requirement_id),
+            changes=data.model_dump(exclude_unset=True),
+        )
+    except (ScheduleNotFound, ShiftRequirementNotFound):
+        raise AuthHttpError(
+            404,
+            "about:blank",
+            "Nie znaleziono zapotrzebowania",
+            "Zasób nie istnieje.",
+        ) from None
+    except ScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Zapotrzebowanie można zmieniać tylko w grafiku draft.",
+        ) from None
+    except PositionNotFound:
+        raise AuthHttpError(
+            404,
+            "about:blank",
+            "Nie znaleziono stanowiska",
+            "Stanowisko nie istnieje.",
+        ) from None
+    except PositionInactive:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:position-inactive",
+            "Stanowisko jest nieaktywne",
+            "Nowe zapotrzebowanie wymaga aktywnego stanowiska.",
+        ) from None
+    except ShiftRequirementAssigned:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:shift-requirement-assigned",
+            "Zapotrzebowanie ma przydziały",
+            "Struktury zapotrzebowania z przydziałami nie można zmienić.",
+        ) from None
+    except ShiftRequirementConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:shift-requirement-conflict",
+            "Zapotrzebowanie już istnieje",
+            "Zapotrzebowanie o tych samych danych już istnieje.",
+        ) from None
+    except ValueError as exc:
+        raise AuthHttpError(
+            422,
+            "urn:dreamplanner:problem:validation-error",
+            "Błędne dane wejściowe",
+            str(exc),
+        ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_shift_requirement(requirement, position)
 

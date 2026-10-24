@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from src.assignments.models import ShiftAssignment
 from src.auth import session_service
 from src.core.database import Base, get_session
 from src.main import create_app
@@ -50,7 +51,12 @@ def shift_requirements_api(monkeypatch: pytest.MonkeyPatch):
 
     Base.metadata.create_all(
         engine,
-        tables=[Position.__table__, Schedule.__table__, ShiftRequirement.__table__],
+        tables=[
+            Position.__table__,
+            Schedule.__table__,
+            ShiftRequirement.__table__,
+            ShiftAssignment.__table__,
+        ],
     )
     with Session(engine) as session:
         session.add_all(
@@ -147,6 +153,24 @@ def shift_requirements_api(monkeypatch: pytest.MonkeyPatch):
                     schedule_id=LARGE_SCHEDULE_ID,
                     position_id=LARGE_POSITION_ID,
                     work_date=date(2027, 5, 2),
+                    start_time=time(8),
+                    end_time=time(16),
+                    required_workers=1,
+                ),
+                ShiftRequirement(
+                    id=206,
+                    schedule_id=51,
+                    position_id=7,
+                    work_date=date(2028, 3, 2),
+                    start_time=time(8),
+                    end_time=time(16),
+                    required_workers=1,
+                ),
+                ShiftRequirement(
+                    id=207,
+                    schedule_id=52,
+                    position_id=7,
+                    work_date=date(2028, 10, 2),
                     start_time=time(8),
                     end_time=time(16),
                     required_workers=1,
@@ -578,7 +602,7 @@ def test_openapi_documents_read_operations_and_contract(
     list_path = f"{PATH}/{{schedule_id}}/shift-requirements"
     detail_path = f"{list_path}/{{requirement_id}}"
     assert set(paths[list_path]) == {"get", "post"}
-    assert set(paths[detail_path]) == {"get"}
+    assert set(paths[detail_path]) == {"get", "patch"}
 
     list_operation = paths[list_path]["get"]
     detail_operation = paths[detail_path]["get"]

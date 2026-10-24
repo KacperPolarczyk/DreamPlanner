@@ -1,7 +1,7 @@
 """Monthly schedule writing workflows and their expected conflicts."""
 
 import sqlite3
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -41,6 +41,14 @@ class ShiftRequirementConflict(Exception):
     """The exact staffing requirement already exists."""
 
 
+class ShiftRequirementAssigned(Exception):
+    """A structural change is forbidden while assignments exist."""
+
+
+class ShiftRequirementNotFound(Exception):
+    """The requirement does not belong to the requested schedule."""
+
+
 def _requirement_conflict(exc: IntegrityError) -> bool:
     original = exc.orig
     diagnostic = getattr(original, "diag", None)
@@ -65,12 +73,30 @@ def _valid_local_time(day, value: time) -> bool:
     return len(valid_offsets) == 1
 
 
+def _validate_requirement_period(
+    schedule: Schedule, work_date: date, start_time: time, end_time: time
+) -> None:
+    """Validate the local date and time range against its schedule and DST."""
+    if work_date.year != schedule.year or work_date.month != schedule.month:
+        raise ValueError("work_date is outside schedule period")
+    if start_time >= end_time:
+        raise ValueError("start_time must be before end_time")
+    cursor = datetime.combine(work_date, start_time)
+    finish = datetime.combine(work_date, end_time)
+    while cursor < finish:
+        if not _valid_local_time(work_date, cursor.time()):
+            raise ValueError("interval includes invalid or ambiguous local time")
+        cursor += timedelta(minutes=1)
+    if not _valid_local_time(work_date, end_time):
+        raise ValueError("interval ends at invalid or ambiguous local time")
+
+
 def create_shift_requirement(
     session: Session,
     schedule_id: int,
     *,
     position_id: int,
-    work_date,
+    work_date: date,
     start_time: time,
     end_time: time,
     required_workers: int,
@@ -89,18 +115,7 @@ def create_shift_requirement(
             raise PositionNotFound
         if not position.is_active:
             raise PositionInactive
-        if work_date.year != schedule.year or work_date.month != schedule.month:
-            raise ValueError("work_date is outside schedule period")
-        if start_time >= end_time:
-            raise ValueError("start_time must be before end_time")
-        cursor = datetime.combine(work_date, start_time)
-        finish = datetime.combine(work_date, end_time)
-        while cursor < finish:
-            if not _valid_local_time(work_date, cursor.time()):
-                raise ValueError("interval includes invalid or ambiguous local time")
-            cursor += timedelta(minutes=1)
-        if not _valid_local_time(work_date, end_time):
-            raise ValueError("interval ends at invalid or ambiguous local time")
+        _validate_requirement_period(schedule, work_date, start_time, end_time)
         requirement = ShiftRequirement(
             schedule_id=schedule_id,
             position_id=position_id,
@@ -115,6 +130,78 @@ def create_shift_requirement(
         requirement, position = requirements.get_committed(requirement.id)
         session.commit()
         return requirement, position
+    except IntegrityError as exc:
+        session.rollback()
+        if _requirement_conflict(exc):
+            raise ShiftRequirementConflict from None
+        raise
+    except Exception:
+        session.rollback()
+        raise
+
+
+def update_shift_requirement(
+    session: Session,
+    schedule_id: int,
+    requirement_id: int,
+    *,
+    changes: dict[str, object],
+) -> tuple[ShiftRequirement, Position]:
+    """Apply a sparse PATCH while protecting assigned shifts from restructuring."""
+    try:
+        schedule = ScheduleRepository(session).get_by_id_for_update(schedule_id)
+        if schedule is None:
+            raise ScheduleNotFound
+        if schedule.status != "draft":
+            raise ScheduleStateConflict
+
+        repository = ShiftRequirementRepository(session)
+        requirement = repository.get_for_schedule_for_update(
+            schedule_id, requirement_id
+        )
+        if requirement is None:
+            raise ShiftRequirementNotFound
+
+        old = {
+            "position_id": requirement.position_id,
+            "work_date": requirement.work_date,
+            "start_time": requirement.start_time,
+            "end_time": requirement.end_time,
+            "required_workers": requirement.required_workers,
+        }
+        new = old | changes
+        if "position_id" in new:
+            new["position_id"] = int(new["position_id"])
+        structural_changes = {key for key in old if old[key] != new[key]}
+        _validate_requirement_period(
+            schedule,
+            new["work_date"],
+            new["start_time"],
+            new["end_time"],
+        )
+        if new["required_workers"] <= 0:
+            raise ValueError("required_workers must be positive")
+
+        if "position_id" in structural_changes:
+            position = repository.get_position_for_share(new["position_id"])
+            if position is None:
+                raise PositionNotFound
+            if not position.is_active:
+                raise PositionInactive
+
+        if structural_changes and repository.has_assignments(requirement_id):
+            raise ShiftRequirementAssigned
+
+        for key, value in new.items():
+            setattr(requirement, key, value)
+        if "note" in changes:
+            requirement.note = changes["note"]
+        session.flush()
+        result = repository.get_committed(requirement_id)
+        session.expunge(result[0])
+        session.expunge(result[1])
+        session.commit()
+        return result
     except IntegrityError as exc:
         session.rollback()
         if _requirement_conflict(exc):

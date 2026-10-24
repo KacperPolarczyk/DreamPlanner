@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from typing import Literal
 from unicodedata import category
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ScheduleStatus = Literal[
     "draft", "collecting", "collection_closed", "closed", "published"
@@ -116,3 +116,26 @@ class CreateShiftRequirementInput(BaseModel):
         if any(category(char) == "Cc" for char in value):
             raise ValueError("note contains control characters")
         return value or None
+
+
+class UpdateShiftRequirementInput(CreateShiftRequirementInput):
+    """Sparse, non-null structural fields for a staffing requirement PATCH."""
+
+    position_id: str | None = None
+    work_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    required_workers: int | None = Field(default=None, strict=True, ge=1, le=2147483647)
+
+    @field_validator("required_workers", mode="before")
+    @classmethod
+    def required_workers_cannot_be_null(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("required_workers cannot be null")
+        return value
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> "UpdateShiftRequirementInput":
+        if not self.model_fields_set:
+            raise ValueError("PATCH body must contain at least one field")
+        return self

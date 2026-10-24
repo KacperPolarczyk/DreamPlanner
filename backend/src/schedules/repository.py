@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.assignments.models import ShiftAssignment
 from src.availability.models import AvailabilitySubmission
 from src.positions.models import Position
 from src.schedules.models import Schedule, ShiftRequirement
@@ -116,6 +117,31 @@ class ShiftRequirementRepository:
             .where(Position.id == position_id)
             .with_for_update(read=True, key_share=True)
             .execution_options(populate_existing=True)
+        )
+
+    def get_for_schedule_for_update(
+        self, schedule_id: int, requirement_id: int
+    ) -> ShiftRequirement | None:
+        """Lock one requirement belonging to the requested schedule."""
+        return self.session.scalar(
+            select(ShiftRequirement)
+            .where(
+                ShiftRequirement.schedule_id == schedule_id,
+                ShiftRequirement.id == requirement_id,
+            )
+            .with_for_update(of=ShiftRequirement)
+            .execution_options(populate_existing=True)
+        )
+
+    def has_assignments(self, requirement_id: int) -> bool:
+        """Check for assignments after the requirement row is locked."""
+        return (
+            self.session.scalar(
+                select(ShiftAssignment.id)
+                .where(ShiftAssignment.shift_requirement_id == requirement_id)
+                .limit(1)
+            )
+            is not None
         )
 
     def add(self, requirement: ShiftRequirement) -> None:
