@@ -522,7 +522,7 @@ def test_openapi_documents_availability_endpoints_and_query_contract(availabilit
     list_path = "/api/v1/schedules/{schedule_id}/availability-submissions"
     detail_path = f"{list_path}/{{submission_id}}"
     assert set(paths[list_path]) == {"get", "post"}
-    assert set(paths[detail_path]) == {"get", "patch"}
+    assert set(paths[detail_path]) == {"get", "patch", "delete"}
     operation = paths[list_path]["get"]
     assert operation["security"] == [{"BearerAuth": []}]
     assert {"200", "401", "403", "404", "422"} <= set(operation["responses"])

@@ -23,11 +23,15 @@ from src.availability.service import (
     AvailabilityEntryConflict,
     AvailabilityScheduleNotFound,
     AvailabilityScheduleStateConflict,
+    AvailabilitySubmissionAlreadySubmitted,
     AvailabilitySubmissionConflict,
     AvailabilitySubmissionNotFound,
 )
 from src.availability.service import (
     create_availability_submission as create_submission,
+)
+from src.availability.service import (
+    delete_availability_submission as delete_submission,
 )
 from src.availability.service import (
     list_availability_submissions as list_submissions,
@@ -468,3 +472,64 @@ def update_availability_submission(
 
     response.headers["Cache-Control"] = "no-store"
     return result
+
+
+@router.delete(
+    "/{schedule_id}/availability-submissions/{submission_id}",
+    status_code=204,
+    summary="Usuń własną roboczą deklarację dyspozycyjności",
+    description=(
+        "Dostępne wyłącznie dla aktywnego employee i własnej, nieprzesłanej "
+        "deklaracji w grafiku collecting. Manager i admin otrzymują 403; "
+        "brak lub cudza deklaracja dają ten sam 404. Odpowiedź 204 nie ma "
+        "treści i zawiera Cache-Control: no-store."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Employee role required"),
+        404: _problem_response("Schedule or visible submission not found"),
+        409: _problem_response("Schedule state or submitted declaration conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def delete_availability_submission(
+    schedule_id: PathId,
+    submission_id: Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)],
+    response: Response,
+    identity: EmployeeIdentity,
+    session: SessionDependency,
+) -> Response:
+    """Delete the authenticated employee's unsubmitted declaration."""
+    parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
+    parsed_submission_id = _parse_path_id(submission_id, "submission_id")
+    try:
+        delete_submission(
+            session,
+            parsed_schedule_id,
+            parsed_submission_id,
+            identity.user_id,
+        )
+    except (AvailabilityScheduleNotFound, AvailabilitySubmissionNotFound):
+        raise AuthHttpError(
+            404,
+            "about:blank",
+            "Nie znaleziono deklaracji",
+            "Zasób nie istnieje.",
+        ) from None
+    except AvailabilityScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Operacja jest niedostępna w bieżącym stanie grafiku.",
+        ) from None
+    except AvailabilitySubmissionAlreadySubmitted:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:availability-submission-submitted",
+            "Przesłanej deklaracji nie można usunąć",
+            "Robocze deklaracje można usuwać przed przesłaniem.",
+        ) from None
+
+    response.headers["Cache-Control"] = "no-store"
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})

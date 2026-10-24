@@ -27,6 +27,10 @@ class AvailabilitySubmissionNotFound(Exception):
     """The requested submission is absent or outside the caller's scope."""
 
 
+class AvailabilitySubmissionAlreadySubmitted(Exception):
+    """The employee's declaration has already been submitted."""
+
+
 class AvailabilityScheduleStateConflict(Exception):
     """The schedule is not accepting availability declarations."""
 
@@ -237,6 +241,37 @@ def update_availability_submission(
         if _entry_conflict(exc):
             raise AvailabilityEntryConflict from None
         raise
+    except Exception:
+        session.rollback()
+        raise
+
+
+def delete_availability_submission(
+    session: Session,
+    schedule_id: int,
+    submission_id: int,
+    user_id: int,
+) -> None:
+    """Delete one owned draft after locking its schedule and declaration."""
+    repository = AvailabilitySubmissionRepository(session)
+    try:
+        schedule = repository.get_schedule_for_update(schedule_id)
+        if schedule is None:
+            raise AvailabilityScheduleNotFound
+        if schedule.status != "collecting":
+            raise AvailabilityScheduleStateConflict
+
+        submission = repository.get_for_user_for_update(
+            schedule_id, submission_id, user_id
+        )
+        if submission is None:
+            raise AvailabilitySubmissionNotFound
+        if submission.submitted_at is not None:
+            raise AvailabilitySubmissionAlreadySubmitted
+
+        repository.delete_submission(submission)
+        session.flush()
+        session.commit()
     except Exception:
         session.rollback()
         raise

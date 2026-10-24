@@ -50,6 +50,10 @@ class AvailabilitySubmissionRepository:
             .execution_options(populate_existing=True)
         )
 
+    def delete_submission(self, submission: AvailabilitySubmission) -> None:
+        """Stage deletion of a locked declaration in the caller's transaction."""
+        self.session.delete(submission)
+
     def delete_entries(self, submission_id: int) -> None:
         """Delete all old entries immediately before replacement inserts."""
         self.session.execute(
