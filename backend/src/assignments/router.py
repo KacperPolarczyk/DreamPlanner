@@ -160,6 +160,12 @@ def _parse_query(
     return limit, offset, work_date, requirement_id, user_id
 
 
+def _reject_unexpected_query(request: Request) -> None:
+    """Reject query parameters on routes that define none."""
+    if request.query_params:
+        raise RequestValidationError([{"type": "extra_forbidden", "loc": ("query",)}])
+
+
 def _query_parameters() -> list[dict[str, object]]:
     """Expose strict manually parsed filters in OpenAPI."""
     return [
@@ -287,6 +293,7 @@ def list_assignments(
 def get_assignment(
     schedule_id: PathId,
     assignment_id: PathId,
+    request: Request,
     response: Response,
     identity: ReadIdentity,
     session: SessionDependency,
@@ -294,6 +301,7 @@ def get_assignment(
     """Return one assignment through its schedule's requirement."""
     parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
     parsed_assignment_id = _parse_path_id(assignment_id, "assignment_id")
+    _reject_unexpected_query(request)
     try:
         assignment, requirement = read_shift_assignment(
             session, parsed_schedule_id, parsed_assignment_id, role=identity.role
@@ -346,12 +354,14 @@ def get_assignment(
 def post_assignment(
     schedule_id: PathId,
     data: CreateShiftAssignmentInput,
+    request: Request,
     response: Response,
     identity: ManagerIdentity,
     session: SessionDependency,
 ) -> ShiftAssignmentResponse:
     """Create and return one committed assignment with a canonical Location."""
     parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
+    _reject_unexpected_query(request)
     try:
         result = create_shift_assignment(
             session,
@@ -449,6 +459,7 @@ def post_assignment(
 def delete_assignment(
     schedule_id: PathId,
     assignment_id: PathId,
+    request: Request,
     identity: ManagerIdentity,
     body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
     session: SessionDependency,
@@ -456,6 +467,7 @@ def delete_assignment(
     """Delete one assignment in the requested closed schedule."""
     parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
     parsed_assignment_id = _parse_path_id(assignment_id, "assignment_id")
+    _reject_unexpected_query(request)
     try:
         delete_shift_assignment(
             session, parsed_schedule_id, parsed_assignment_id, actor_role=identity.role

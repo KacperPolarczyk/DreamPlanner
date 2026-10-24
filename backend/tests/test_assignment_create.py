@@ -725,3 +725,40 @@ def test_openapi_documents_post_without_patch(assignment_api) -> None:
         "user_id",
         "warning_acknowledged",
     }
+
+
+@pytest.mark.parametrize(
+    "query", ["unexpected=1", "limit=1", "unexpected=1&unexpected=2"]
+)
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_non_list_assignment_routes_reject_query(assignment_api, method, query) -> None:
+    app, token, _, engine = assignment_api
+    path = PATH if method == "POST" else f"{PATH}/999"
+    with TestClient(app) as client:
+        response = client.request(
+            method,
+            f"{path}?{query}",
+            headers=_headers(token),
+            json=_body(acknowledged=True) if method == "POST" else None,
+        )
+    assert response.status_code == 422
+    assert response.json()["type"] == "urn:dreamplanner:problem:validation-error"
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.headers["cache-control"] == "no-store"
+    assert _count(engine) == 0
+
+
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+def test_non_list_query_does_not_precede_role_check(assignment_api, method) -> None:
+    app, token, actor, engine = assignment_api
+    actor.role.code = "employee"
+    path = PATH if method == "POST" else f"{PATH}/999"
+    with TestClient(app) as client:
+        response = client.request(
+            method,
+            f"{path}?unexpected=1",
+            headers=_headers(token),
+            json=_body(acknowledged=True) if method == "POST" else None,
+        )
+    assert response.status_code == 403
+    assert _count(engine) == 0
