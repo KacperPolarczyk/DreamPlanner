@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from src.assignments.schemas import (
     CreateShiftAssignmentInput,
+    MyShiftListResponse,
+    MyShiftResponse,
     ShiftAssignmentListResponse,
     ShiftAssignmentResponse,
 )
@@ -28,21 +30,27 @@ from src.assignments.service import (
     assignment_response,
     create_shift_assignment,
     delete_shift_assignment,
+    list_my_published_shifts,
     list_shift_assignments,
+    my_shift_response,
+    read_my_published_shift,
     read_shift_assignment,
 )
-from src.auth.dependencies import AuthHttpError, require_roles
+from src.auth.dependencies import AuthHttpError, require_active_employee, require_roles
 from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
 
 router = APIRouter(prefix="/schedules", tags=["shift-assignments"])
+employee_router = APIRouter(prefix="/me", tags=["my-shifts"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 ReadIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))]
 ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
+EmployeeIdentity = Annotated[ActiveIdentity, Depends(require_active_employee)]
 PathId = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 MAX_BIGINT = 9223372036854775807
 ALLOWED_QUERY = {"limit", "offset", "work_date", "shift_requirement_id", "user_id"}
+MY_SHIFTS_QUERY = {"from_date", "to_date", "limit", "offset"}
 
 
 async def _reject_nonempty_body(request: Request) -> None:
@@ -205,6 +213,180 @@ def _query_parameters() -> list[dict[str, object]]:
             "schema": {"type": "string", "pattern": "^[0-9]{1,19}$"},
         },
     ]
+
+
+def _my_shifts_query_parameters() -> list[dict[str, object]]:
+    """Describe the supported date range and pagination filters."""
+    return [
+        {
+            "name": "from_date",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "string", "format": "date"},
+        },
+        {
+            "name": "to_date",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "string", "format": "date"},
+        },
+        {
+            "name": "limit",
+            "in": "query",
+            "required": False,
+            "schema": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
+        },
+        {
+            "name": "offset",
+            "in": "query",
+            "required": False,
+            "schema": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": MAX_BIGINT,
+                "default": 0,
+            },
+        },
+    ]
+
+
+def _parse_my_shifts_query(
+    request: Request,
+) -> tuple[int, int, date | None, date | None]:
+    """Validate only the documented inclusive date filters and page values."""
+    values = request.query_params
+    invalid = (set(values) - MY_SHIFTS_QUERY) | {
+        key for key in set(values) & MY_SHIFTS_QUERY if len(values.getlist(key)) > 1
+    }
+    if invalid:
+        raise RequestValidationError(
+            [
+                {"type": "extra_forbidden", "loc": ("query", key)}
+                for key in sorted(invalid)
+            ]
+        )
+
+    parsed_dates: list[date | None] = []
+    for key in ("from_date", "to_date"):
+        raw = values.get(key)
+        if raw is None:
+            parsed_dates.append(None)
+            continue
+        if (
+            len(raw) != 10
+            or not raw.isascii()
+            or raw[4] != "-"
+            or raw[7] != "-"
+            or not (raw[:4] + raw[5:7] + raw[8:]).isdecimal()
+        ):
+            _query_error(key, "date_from_datetime_parsing")
+        try:
+            parsed_dates.append(date.fromisoformat(raw))
+        except ValueError:
+            _query_error(key, "date_from_datetime_parsing")
+
+    from_date, to_date = parsed_dates
+    if from_date is not None and to_date is not None and from_date > to_date:
+        _query_error("to_date")
+    limit = (
+        _parse_decimal(values["limit"], "limit", minimum=1, maximum=100)
+        if "limit" in values
+        else 25
+    )
+    offset = (
+        _parse_decimal(values["offset"], "offset", minimum=0, maximum=MAX_BIGINT)
+        if "offset" in values
+        else 0
+    )
+    return limit, offset, from_date, to_date
+
+
+@employee_router.get(
+    "/shifts",
+    response_model=MyShiftListResponse,
+    summary="Pobierz własne opublikowane zmiany",
+    description=(
+        "Wymaga aktywnej sesji i aktualnej roli aktywnego employee. Zwraca "
+        "wyłącznie własne przydziały z grafików `published`; identyfikator "
+        "użytkownika pochodzi z uwierzytelnionej tożsamości. Daty `from_date` "
+        "i `to_date` są włączne. Sortowanie: `work_date`, `start_time`, "
+        "`shift_requirement_id`, `assignment_id` rosnąco. `total` uwzględnia "
+        "te same filtry przed paginacją. Godziny zmian są lokalne "
+        "`Europe/Warsaw`, a ostrzeżenia pozostają historyczne. Odpowiedź "
+        "zawiera `Cache-Control: no-store`."
+    ),
+    openapi_extra={"parameters": _my_shifts_query_parameters()},
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Active employee required"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def list_my_shifts(
+    request: Request,
+    response: Response,
+    identity: EmployeeIdentity,
+    session: SessionDependency,
+) -> MyShiftListResponse:
+    """Return one bounded page scoped to the current employee."""
+    limit, offset, from_date, to_date = _parse_my_shifts_query(request)
+    rows, total = list_my_published_shifts(
+        session,
+        identity.user_id,
+        from_date=from_date,
+        to_date=to_date,
+        limit=limit,
+        offset=offset,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return MyShiftListResponse(
+        items=[
+            my_shift_response(assignment, requirement, position_name)
+            for assignment, requirement, position_name in rows
+        ],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )
+
+
+@employee_router.get(
+    "/shifts/{assignment_id}",
+    response_model=MyShiftResponse,
+    summary="Pobierz własną opublikowaną zmianę",
+    description=(
+        "Wymaga aktywnej sesji i aktualnej roli aktywnego employee. Przydział "
+        "musi należeć do uwierzytelnionego użytkownika i grafiku o statusie "
+        "`published`; brak dostępu, cudzy, nieopublikowany lub nieznany ID "
+        "zwraca ten sam `404`. ID jest BIGINT. Godziny zmiany są lokalne "
+        "`Europe/Warsaw`, a ostrzeżenie jest historyczne. Odpowiedź zawiera "
+        "`Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Active employee required"),
+        404: _problem_response("Assignment not found"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def get_my_shift(
+    assignment_id: PathId,
+    request: Request,
+    response: Response,
+    identity: EmployeeIdentity,
+    session: SessionDependency,
+) -> MyShiftResponse:
+    """Return an own published assignment without revealing hidden IDs."""
+    parsed_assignment_id = _parse_path_id(assignment_id, "assignment_id")
+    _reject_unexpected_query(request)
+    row = read_my_published_shift(session, identity.user_id, parsed_assignment_id)
+    if row is None:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono przydziału", "Zasób nie istnieje."
+        )
+    response.headers["Cache-Control"] = "no-store"
+    assignment, requirement, position_name = row
+    return my_shift_response(assignment, requirement, position_name)
 
 
 @router.get(

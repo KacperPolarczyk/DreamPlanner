@@ -47,6 +47,7 @@ class ActiveIdentity:
     user_id: int
     session_id: UUID
     role: str
+    is_active: bool = True
 
 
 def _active_user(user: User | None) -> bool:
@@ -246,7 +247,11 @@ def revoke_all_sessions(
 
 
 def validate_session(
-    session: Session, session_id: UUID, user_id: int
+    session: Session,
+    session_id: UUID,
+    user_id: int,
+    *,
+    allow_inactive_account: bool = False,
 ) -> ActiveIdentity:
     """Check a bearer token's database-backed session and current account.
 
@@ -267,6 +272,8 @@ def validate_session(
     ):
         raise InvalidSession("Invalid session.")
     user = repository.get_user_fresh(user_id)
-    if not _active_user(user):
+    if user is None or (not allow_inactive_account and not _active_user(user)):
         raise InvalidSession("Invalid session.")
-    return ActiveIdentity(user_id, session_id, user.role.code)
+    return ActiveIdentity(
+        user_id, session_id, user.role.code, is_active=_active_user(user)
+    )

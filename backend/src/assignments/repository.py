@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from src.assignments.models import ShiftAssignment
 from src.availability.models import AvailabilityEntry, AvailabilitySubmission
-from src.schedules.models import ShiftRequirement
+from src.positions.models import Position
+from src.schedules.models import Schedule, ShiftRequirement
 from src.users.models import Role, User
 
 
@@ -16,6 +17,75 @@ class ShiftAssignmentRepository:
 
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def list_my_published_shifts(
+        self,
+        user_id: int,
+        *,
+        from_date: date | None,
+        to_date: date | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[tuple[ShiftAssignment, ShiftRequirement, str]], int]:
+        """Return a bounded page and matching count for one employee."""
+        filters = [
+            ShiftAssignment.user_id == user_id,
+            Schedule.status == "published",
+        ]
+        if from_date is not None:
+            filters.append(ShiftRequirement.work_date >= from_date)
+        if to_date is not None:
+            filters.append(ShiftRequirement.work_date <= to_date)
+
+        joins = (
+            ShiftAssignment.__table__.join(
+                ShiftRequirement,
+                ShiftRequirement.id == ShiftAssignment.shift_requirement_id,
+            )
+            .join(Schedule, Schedule.id == ShiftRequirement.schedule_id)
+            .join(Position, Position.id == ShiftRequirement.position_id)
+        )
+        total = self.session.scalar(
+            select(func.count()).select_from(joins).where(*filters)
+        )
+        rows = self.session.execute(
+            select(ShiftAssignment, ShiftRequirement, Position.name)
+            .join(
+                ShiftRequirement,
+                ShiftRequirement.id == ShiftAssignment.shift_requirement_id,
+            )
+            .join(Schedule, Schedule.id == ShiftRequirement.schedule_id)
+            .join(Position, Position.id == ShiftRequirement.position_id)
+            .where(*filters)
+            .order_by(
+                ShiftRequirement.work_date.asc(),
+                ShiftRequirement.start_time.asc(),
+                ShiftRequirement.id.asc(),
+                ShiftAssignment.id.asc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        ).all()
+        return list(rows), total or 0
+
+    def get_my_published_shift(
+        self, user_id: int, assignment_id: int
+    ) -> tuple[ShiftAssignment, ShiftRequirement, str] | None:
+        """Find one published shift only when it belongs to the employee."""
+        return self.session.execute(
+            select(ShiftAssignment, ShiftRequirement, Position.name)
+            .join(
+                ShiftRequirement,
+                ShiftRequirement.id == ShiftAssignment.shift_requirement_id,
+            )
+            .join(Schedule, Schedule.id == ShiftRequirement.schedule_id)
+            .join(Position, Position.id == ShiftRequirement.position_id)
+            .where(
+                ShiftAssignment.id == assignment_id,
+                ShiftAssignment.user_id == user_id,
+                Schedule.status == "published",
+            )
+        ).one_or_none()
 
     def get_requirement_for_key_share(
         self, schedule_id: int, requirement_id: int

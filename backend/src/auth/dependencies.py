@@ -91,15 +91,50 @@ def get_current_identity(
     ],
 ) -> ActiveIdentity:
     """Validate Bearer JWT and return current account state from PostgreSQL."""
+    return _get_identity(request, session, allow_inactive_account=False)
+
+
+def get_current_identity_allow_inactive(
+    request: Request,
+    session: SessionDependency,
+    _credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+    ],
+) -> ActiveIdentity:
+    """Validate the session while leaving active-account policy to one route."""
+    return _get_identity(request, session, allow_inactive_account=True)
+
+
+def _get_identity(
+    request: Request, session: Session, *, allow_inactive_account: bool
+) -> ActiveIdentity:
+    """Verify one Bearer and its database-backed session."""
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token or " " in token:
         raise _unauthenticated()
     try:
         user_id, session_id = require_codec(request).verify(token)
-        return validate_session(session, session_id, user_id)
+        return validate_session(
+            session,
+            session_id,
+            user_id,
+            allow_inactive_account=allow_inactive_account,
+        )
     except (InvalidAccessToken, InvalidSession):
         raise _unauthenticated() from None
+
+
+EmployeeReadIdentity = Annotated[
+    ActiveIdentity, Depends(get_current_identity_allow_inactive)
+]
+
+
+def require_active_employee(identity: EmployeeReadIdentity) -> ActiveIdentity:
+    """Require a current employee role and active, activated account."""
+    if identity.role != "employee" or not identity.is_active:
+        raise AuthHttpError(403, "about:blank", "Odmowa dostępu", "Brak uprawnienia.")
+    return identity
 
 
 CurrentIdentity = Annotated[ActiveIdentity, Depends(get_current_identity)]

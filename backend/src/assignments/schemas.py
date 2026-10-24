@@ -50,3 +50,27 @@ class ShiftAssignmentListResponse(BaseModel):
     limit: int
     offset: int
     total: int
+
+
+class MyShiftResponse(BaseModel):
+    """One published shift assigned to the authenticated employee."""
+
+    assignment_id: str
+    schedule_id: str
+    shift_requirement_id: str
+    position_id: str
+    position_name: str
+    work_date: date
+    start_time: time
+    end_time: time
+    warning_type: Literal["unavailable", "unknown"] | None
+    warning_acknowledged_at: datetime | None
+
+
+class MyShiftListResponse(BaseModel):
+    """One page of the authenticated employee's published shifts."""
+
+    items: list[MyShiftResponse]
+    limit: int
+    offset: int
+    total: int

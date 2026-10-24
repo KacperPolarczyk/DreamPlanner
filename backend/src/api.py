@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from src.assignments.router import employee_router
 from src.assignments.router import router as assignments_router
 from src.auth.router import router as auth_router
 from src.availability.router import router as availability_router
@@ -17,4 +18,5 @@ api_router.include_router(positions_router)
 api_router.include_router(schedules_router)
 api_router.include_router(availability_router)
 api_router.include_router(assignments_router)
+api_router.include_router(employee_router)
 api_router.include_router(users_router)

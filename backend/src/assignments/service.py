@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.assignments.models import ShiftAssignment
 from src.assignments.repository import ShiftAssignmentRepository
-from src.assignments.schemas import ShiftAssignmentResponse
+from src.assignments.schemas import MyShiftResponse, ShiftAssignmentResponse
 from src.availability.models import AvailabilityEntry
 from src.schedules.models import ShiftRequirement
 from src.schedules.repository import ScheduleRepository
@@ -87,6 +87,52 @@ def assignment_response(
         work_date=requirement.work_date,
         start_time=requirement.start_time,
         end_time=requirement.end_time,
+    )
+
+
+def my_shift_response(
+    assignment: ShiftAssignment, requirement: ShiftRequirement, position_name: str
+) -> MyShiftResponse:
+    """Materialize a privacy-limited published shift response."""
+    return MyShiftResponse(
+        assignment_id=str(assignment.id),
+        schedule_id=str(requirement.schedule_id),
+        shift_requirement_id=str(assignment.shift_requirement_id),
+        position_id=str(requirement.position_id),
+        position_name=position_name,
+        work_date=requirement.work_date,
+        start_time=requirement.start_time,
+        end_time=requirement.end_time,
+        warning_type=assignment.warning_type,
+        warning_acknowledged_at=_utc(assignment.warning_acknowledged_at),
+    )
+
+
+def list_my_published_shifts(
+    session: Session,
+    user_id: int,
+    *,
+    from_date: date | None,
+    to_date: date | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[tuple[ShiftAssignment, ShiftRequirement, str]], int]:
+    """Read one bounded page of an employee's published shifts."""
+    return ShiftAssignmentRepository(session).list_my_published_shifts(
+        user_id,
+        from_date=from_date,
+        to_date=to_date,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def read_my_published_shift(
+    session: Session, user_id: int, assignment_id: int
+) -> tuple[ShiftAssignment, ShiftRequirement, str] | None:
+    """Read a published shift only if it belongs to the authenticated user."""
+    return ShiftAssignmentRepository(session).get_my_published_shift(
+        user_id, assignment_id
     )
 
 
