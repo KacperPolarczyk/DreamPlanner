@@ -2,6 +2,7 @@
 
 import sqlite3
 from datetime import UTC, datetime
+from typing import Literal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -94,24 +95,58 @@ def delete_empty_draft(session: Session, schedule_id: int) -> None:
         raise
 
 
-def open_collection(session: Session, schedule_id: int) -> Schedule:
-    """Move one locked draft to collecting and commit its first opening time.
-
-    Raises:
-        ScheduleNotFound: If the schedule no longer exists.
-        ScheduleStateConflict: If its current status is not draft.
-    """
+def _change_collection_stage(
+    session: Session,
+    schedule_id: int,
+    *,
+    source_status: Literal["draft", "collecting"],
+    target_status: Literal["collecting", "collection_closed"],
+    timestamp_field: Literal["collection_opened_at", "collection_closed_at"],
+) -> Schedule:
+    """Lock, validate, and commit one collection stage and its UTC timestamp."""
     try:
         schedule = ScheduleRepository(session).get_by_id_for_update(schedule_id)
         if schedule is None:
             raise ScheduleNotFound
-        if schedule.status != "draft":
+        if schedule.status != source_status:
             raise ScheduleStateConflict
-        schedule.status = "collecting"
-        schedule.collection_opened_at = datetime.now(UTC)
+        schedule.status = target_status
+        setattr(schedule, timestamp_field, datetime.now(UTC))
         session.flush()
         session.commit()
         return schedule
     except Exception:
         session.rollback()
         raise
+
+
+def open_collection(session: Session, schedule_id: int) -> Schedule:
+    """Move one draft to collecting and commit its first opening time.
+
+    Raises:
+        ScheduleNotFound: If the schedule no longer exists.
+        ScheduleStateConflict: If its current status is not draft.
+    """
+    return _change_collection_stage(
+        session,
+        schedule_id,
+        source_status="draft",
+        target_status="collecting",
+        timestamp_field="collection_opened_at",
+    )
+
+
+def close_collection(session: Session, schedule_id: int) -> Schedule:
+    """Move one collecting schedule to collection_closed and commit its time.
+
+    Raises:
+        ScheduleNotFound: If the schedule no longer exists.
+        ScheduleStateConflict: If its current status is not collecting.
+    """
+    return _change_collection_stage(
+        session,
+        schedule_id,
+        source_status="collecting",
+        target_status="collection_closed",
+        timestamp_field="collection_closed_at",
+    )
