@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from src.availability.models import AvailabilityEntry, AvailabilitySubmission
@@ -33,6 +33,29 @@ class AvailabilitySubmissionRepository:
                 AvailabilitySubmission.schedule_id == schedule_id,
                 AvailabilitySubmission.user_id == user_id,
             )
+        )
+
+    def get_for_user_for_update(
+        self, schedule_id: int, submission_id: int, user_id: int
+    ) -> AvailabilitySubmission | None:
+        """Lock one submission constrained by schedule and employee ownership."""
+        return self.session.scalar(
+            select(AvailabilitySubmission)
+            .where(
+                AvailabilitySubmission.schedule_id == schedule_id,
+                AvailabilitySubmission.id == submission_id,
+                AvailabilitySubmission.user_id == user_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def delete_entries(self, submission_id: int) -> None:
+        """Delete all old entries immediately before replacement inserts."""
+        self.session.execute(
+            delete(AvailabilityEntry)
+            .where(AvailabilityEntry.submission_id == submission_id)
+            .execution_options(synchronize_session=False)
         )
 
     def add_submission(self, submission: AvailabilitySubmission) -> None:

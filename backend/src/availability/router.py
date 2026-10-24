@@ -17,8 +17,10 @@ from src.availability.schemas import (
     AvailabilitySubmissionResponse,
     AvailabilitySubmissionSummary,
     CreateAvailabilitySubmissionInput,
+    UpdateAvailabilitySubmissionInput,
 )
 from src.availability.service import (
+    AvailabilityEntryConflict,
     AvailabilityScheduleNotFound,
     AvailabilityScheduleStateConflict,
     AvailabilitySubmissionConflict,
@@ -32,6 +34,9 @@ from src.availability.service import (
 )
 from src.availability.service import (
     read_availability_submission as read_submission,
+)
+from src.availability.service import (
+    update_availability_submission as update_submission,
 )
 from src.core.database import get_session
 
@@ -393,5 +398,73 @@ def create_availability_submission(
     response.headers["Location"] = (
         f"/api/v1/schedules/{parsed_schedule_id}/availability-submissions/{result.id}"
     )
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@router.patch(
+    "/{schedule_id}/availability-submissions/{submission_id}",
+    response_model=AvailabilitySubmissionResponse,
+    summary="Edytuj lub prześlij własną deklarację dyspozycyjności",
+    description=(
+        "Dostępne wyłącznie dla aktywnego employee i własnej deklaracji. "
+        "Pole entries, jeśli podane, zastępuje całą listę. Odpowiedź zawiera "
+        "pełny zasób i Cache-Control: no-store."
+    ),
+    responses={
+        400: _problem_response("Malformed JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Employee role required"),
+        404: _problem_response("Schedule or visible submission not found"),
+        409: _problem_response("Schedule state or availability entry conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def update_availability_submission(
+    schedule_id: PathId,
+    submission_id: Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)],
+    payload: UpdateAvailabilitySubmissionInput,
+    response: Response,
+    identity: EmployeeIdentity,
+    session: SessionDependency,
+) -> AvailabilitySubmissionResponse:
+    """Replace the employee's entries or submit the current declaration."""
+    parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
+    parsed_submission_id = _parse_path_id(submission_id, "submission_id")
+    try:
+        result = update_submission(
+            session,
+            parsed_schedule_id,
+            parsed_submission_id,
+            identity.user_id,
+            changes=payload,
+        )
+    except AvailabilityScheduleNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono deklaracji", "Zasób nie istnieje."
+        ) from None
+    except AvailabilitySubmissionNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono deklaracji", "Zasób nie istnieje."
+        ) from None
+    except AvailabilityScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Operacja jest niedostępna w bieżącym stanie grafiku.",
+        ) from None
+    except AvailabilityEntryConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:availability-entry-overlap",
+            "Konflikt wpisów dyspozycyjności",
+            "Nowe wpisy kolidują z danymi zapisanymi w bazie.",
+        ) from None
+    except ValueError:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("body", "entries")}]
+        ) from None
+
     response.headers["Cache-Control"] = "no-store"
     return result

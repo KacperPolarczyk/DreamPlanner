@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from typing import Literal
 from unicodedata import category
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class AvailabilityEntryInput(BaseModel):
@@ -54,6 +54,22 @@ class CreateAvailabilitySubmissionInput(BaseModel):
 
     entries: list[AvailabilityEntryInput]
     submit: bool = Field(default=False, strict=True)
+
+
+class UpdateAvailabilitySubmissionInput(BaseModel):
+    """Strict sparse input for replacing or submitting a declaration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entries: list[AvailabilityEntryInput] = Field(default_factory=list)
+    submit: bool = Field(default=False, strict=True)
+
+    @model_validator(mode="after")
+    def require_operation(self) -> "UpdateAvailabilitySubmissionInput":
+        fields_set = self.model_fields_set
+        if not fields_set or (self.submit is False and "entries" not in fields_set):
+            raise ValueError("PATCH must change entries or submit the declaration")
+        return self
 
 
 class AvailabilityEntryResponse(BaseModel):
