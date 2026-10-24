@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.positions.models import Position
 from src.schedules.models import Schedule, ShiftRequirement
 from src.schedules.repository import ScheduleRepository, ShiftRequirementRepository
+from src.users.repository import UserRepository
 
 
 class SchedulePeriodConflict(Exception):
@@ -23,6 +24,20 @@ class ScheduleNotFound(Exception):
 
 class ScheduleStateConflict(Exception):
     """The current schedule status forbids the requested operation."""
+
+
+class SchedulePublicationForbidden(Exception):
+    """The caller is no longer an active manager."""
+
+
+class SchedulePublicationBlocked(Exception):
+    """A business rule prevents publishing the schedule."""
+
+    def __init__(
+        self, reason: Literal["no_requirements", "overstaffed", "ineligible_user"]
+    ):
+        self.reason = reason
+        super().__init__(reason)
 
 
 class ScheduleNotEmpty(Exception):
@@ -383,3 +398,63 @@ def close_schedule(session: Session, schedule_id: int) -> Schedule:
         target_status="closed",
         timestamp_field=None,
     )
+
+
+def publish_schedule(session: Session, schedule_id: int, *, actor_id: int) -> Schedule:
+    """Validate and publish one closed schedule atomically.
+
+    The schedule lock serializes API assignment writes. Requirement locks and
+    all relevant account locks are acquired in deterministic order. Account
+    locks include the actor so a concurrent role change cannot authorize a
+    stale manager identity.
+    """
+    try:
+        schedules = ScheduleRepository(session)
+        schedule = schedules.get_by_id_for_update(schedule_id)
+        if schedule is None:
+            raise ScheduleNotFound
+        if schedule.status != "closed":
+            raise ScheduleStateConflict
+
+        requirements = schedules.lock_requirements_for_publication(schedule_id)
+        assigned_user_ids = schedules.assignment_user_ids(schedule_id)
+        user_ids = assigned_user_ids | {actor_id}
+        locked_users = UserRepository(session).lock_users_for_share(user_ids)
+        users_by_id = {user.id: (user, role_code) for user, role_code in locked_users}
+
+        actor = users_by_id.get(actor_id)
+        if (
+            actor is None
+            or actor[1] != "manager"
+            or not actor[0].is_active
+            or actor[0].activated_at is None
+        ):
+            raise SchedulePublicationForbidden
+
+        if not requirements:
+            raise SchedulePublicationBlocked("no_requirements")
+
+        counts = schedules.assignment_counts_by_requirement(schedule_id)
+        if any(
+            counts[requirement.id] > requirement.required_workers
+            for requirement in requirements
+        ):
+            raise SchedulePublicationBlocked("overstaffed")
+
+        if any(
+            user_id not in users_by_id
+            or users_by_id[user_id][1] != "employee"
+            or not users_by_id[user_id][0].is_active
+            or users_by_id[user_id][0].activated_at is None
+            for user_id in assigned_user_ids
+        ):
+            raise SchedulePublicationBlocked("ineligible_user")
+
+        schedule.status = "published"
+        schedule.published_at = datetime.now(UTC)
+        session.flush()
+        session.commit()
+        return schedule
+    except Exception:
+        session.rollback()
+        raise

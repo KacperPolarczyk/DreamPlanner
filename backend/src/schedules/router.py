@@ -30,6 +30,8 @@ from src.schedules.service import (
     ScheduleNotEmpty,
     ScheduleNotFound,
     SchedulePeriodConflict,
+    SchedulePublicationBlocked,
+    SchedulePublicationForbidden,
     ScheduleStateConflict,
     ShiftRequirementAssigned,
     ShiftRequirementConflict,
@@ -41,6 +43,7 @@ from src.schedules.service import (
     delete_empty_draft,
     delete_shift_requirement,
     open_collection,
+    publish_schedule,
     update_shift_requirement,
 )
 
@@ -835,6 +838,78 @@ def close_schedule_stage(
             "urn:dreamplanner:problem:schedule-state-conflict",
             "Niedozwolona zmiana stanu grafiku",
             "Grafik można zamknąć tylko po zakończeniu zbierania dyspozycyjności.",
+        ) from None
+    response.headers["Cache-Control"] = "no-store"
+    return _public_schedule(schedule)
+
+
+@router.post(
+    "/{schedule_id}/publication",
+    response_model=ScheduleResponse,
+    summary="Opublikuj grafik",
+    description=(
+        "Wymaga Bearer JWT oraz aktualnej roli aktywnego managera. Operacja "
+        "nie przyjmuje body i publikuje wyłącznie grafik `closed`. Grafik musi "
+        "zawierać co najmniej jedno zapotrzebowanie. Częściowa obsada i brak "
+        "przydziałów dla wymagania są dozwolone, ale liczba przydziałów nie "
+        "może przekraczać `required_workers`. Każdy przypisany użytkownik "
+        "musi mieć rolę `employee`, `is_active=true` i `activated_at` inne "
+        "niż null. Nieaktywne stanowiska i potwierdzone historyczne ostrzeżenia "
+        "nie blokują publikacji. Publikacja jest nieodwracalna; wakatów nie "
+        "można uzupełnić później istniejącym API. Ustawia `published_at` "
+        "w UTC. Odpowiedzi zawierają `Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Active manager required"),
+        404: _problem_response("Schedule not found"),
+        409: _problem_response(
+            "schedule-state-conflict or schedule-publication-blocked. The latter "
+            "covers missing requirements, overstaffing and ineligible assignees."
+        ),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def publish_schedule_endpoint(
+    schedule_id: ScheduleIdPath,
+    response: Response,
+    identity: ManagerIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> ScheduleResponse:
+    """Publish a validated schedule and return its committed state."""
+    try:
+        schedule = publish_schedule(
+            session, _parse_schedule_id(schedule_id), actor_id=identity.user_id
+        )
+    except SchedulePublicationForbidden:
+        raise AuthHttpError(
+            403, "about:blank", "Odmowa dostępu", "Brak uprawnienia."
+        ) from None
+    except ScheduleNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
+        ) from None
+    except ScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Niedozwolona zmiana stanu grafiku",
+            "Opublikować można tylko grafik w stanie closed.",
+        ) from None
+    except SchedulePublicationBlocked as exc:
+        details = {
+            "no_requirements": "Grafik musi zawierać co najmniej jedno wymaganie.",
+            "overstaffed": "Grafik zawiera wymaganie z nadmiarową obsadą.",
+            "ineligible_user": (
+                "Grafik zawiera przydział nieaktywnego lub nieuprawnionego pracownika."
+            ),
+        }
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-publication-blocked",
+            "Nie można opublikować grafiku",
+            details[exc.reason],
         ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_schedule(schedule)

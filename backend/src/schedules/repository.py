@@ -41,6 +41,48 @@ class ScheduleRepository:
             is not None
         )
 
+    def lock_requirements_for_publication(
+        self, schedule_id: int
+    ) -> list[ShiftRequirement]:
+        """Lock schedule requirements in ID order while validating publication."""
+        return list(
+            self.session.scalars(
+                select(ShiftRequirement)
+                .where(ShiftRequirement.schedule_id == schedule_id)
+                .order_by(ShiftRequirement.id.asc())
+                .with_for_update(read=True, key_share=True, of=ShiftRequirement)
+                .execution_options(populate_existing=True)
+            ).all()
+        )
+
+    def assignment_user_ids(self, schedule_id: int) -> set[int]:
+        """Return assigned user IDs within one schedule."""
+        return set(
+            self.session.scalars(
+                select(ShiftAssignment.user_id)
+                .join(
+                    ShiftRequirement,
+                    ShiftRequirement.id == ShiftAssignment.shift_requirement_id,
+                )
+                .where(ShiftRequirement.schedule_id == schedule_id)
+                .distinct()
+            ).all()
+        )
+
+    def assignment_counts_by_requirement(self, schedule_id: int) -> dict[int, int]:
+        """Count assignments for every requirement, including empty requirements."""
+        rows = self.session.execute(
+            select(ShiftRequirement.id, func.count(ShiftAssignment.id))
+            .outerjoin(
+                ShiftAssignment,
+                ShiftAssignment.shift_requirement_id == ShiftRequirement.id,
+            )
+            .where(ShiftRequirement.schedule_id == schedule_id)
+            .group_by(ShiftRequirement.id)
+            .order_by(ShiftRequirement.id.asc())
+        ).all()
+        return {requirement_id: count for requirement_id, count in rows}
+
     def has_availability_submissions(self, schedule_id: int) -> bool:
         """Check for direct availability children after locking the schedule."""
         return (

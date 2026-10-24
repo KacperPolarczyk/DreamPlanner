@@ -147,3 +147,18 @@ class UserRepository:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
+
+    def lock_users_for_share(self, user_ids: set[int]) -> list[tuple[User, str]]:
+        """Lock current account and role state in deterministic ID order."""
+        if not user_ids:
+            return []
+        return list(
+            self.session.execute(
+                select(User, Role.code)
+                .join(Role, Role.id == User.role_id)
+                .where(User.id.in_(user_ids))
+                .order_by(User.id.asc())
+                .with_for_update(read=True, of=User)
+                .execution_options(populate_existing=True)
+            ).all()
+        )

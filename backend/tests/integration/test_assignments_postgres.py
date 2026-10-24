@@ -46,8 +46,10 @@ from src.positions.models import Position
 from src.schedules.models import Schedule, ShiftRequirement
 from src.schedules.repository import ScheduleRepository
 from src.schedules.service import (
+    SchedulePublicationBlocked,
     ScheduleStateConflict,
     delete_shift_requirement,
+    publish_schedule,
     update_shift_requirement,
 )
 from src.users.models import Role, User
@@ -297,6 +299,62 @@ def _delete(session, data, assignment_id):
     return delete_shift_assignment(
         session, data["schedule"], assignment_id, actor_role="manager"
     )
+
+
+def test_publish_schedule_commits_and_preserves_assignment_history(
+    postgres_factory, data
+) -> None:
+    requirement_id = _requirement(postgres_factory, data, workers=2)
+    with postgres_factory() as session:
+        assignment_id = _raw_insert(
+            session,
+            data,
+            requirement_id,
+            data["workers"][0],
+            warning="unknown",
+            ack=datetime.now(UTC),
+        )
+        session.commit()
+
+    with postgres_factory() as session:
+        published = publish_schedule(
+            session, data["schedule"], actor_id=data["manager"]
+        )
+        assert published.status == "published"
+        assert published.published_at is not None
+
+    with postgres_factory() as session:
+        assignment = session.get(ShiftAssignment, assignment_id)
+        schedule = session.get(Schedule, data["schedule"])
+        assert schedule is not None and schedule.status == "published"
+        assert assignment is not None and assignment.warning_type == "unknown"
+        assert assignment.warning_acknowledged_at is not None
+
+
+def test_publish_schedule_blocks_raw_overstaffing_and_rolls_back(
+    postgres_factory, data
+) -> None:
+    requirement_id = _requirement(postgres_factory, data, workers=1)
+    with postgres_factory() as session:
+        _raw_insert(session, data, requirement_id, data["workers"][0])
+        _raw_insert(session, data, requirement_id, data["workers"][1])
+        session.commit()
+
+    with postgres_factory() as session:
+        with pytest.raises(SchedulePublicationBlocked) as error:
+            publish_schedule(session, data["schedule"], actor_id=data["manager"])
+        assert error.value.reason == "overstaffed"
+        schedule = session.get(Schedule, data["schedule"])
+        assert schedule is not None and schedule.status == "closed"
+        assert schedule.published_at is None
+        assert (
+            session.scalar(
+                select(func.count(ShiftAssignment.id)).where(
+                    ShiftAssignment.shift_requirement_id == requirement_id
+                )
+            )
+            == 2
+        )
 
 
 def _wait_blocked(factory, waiting_pid, blocking_pid) -> None:
