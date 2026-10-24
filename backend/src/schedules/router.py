@@ -26,6 +26,7 @@ from src.schedules.service import (
     ScheduleStateConflict,
     create_schedule,
     delete_empty_draft,
+    open_collection,
 )
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
@@ -278,3 +279,46 @@ def delete_schedule(
             "Grafik zawiera dane powiązane i nie może zostać usunięty.",
         ) from None
     response.headers["Cache-Control"] = "no-store"
+
+
+@router.post(
+    "/{schedule_id}/collection-opening",
+    response_model=ScheduleResponse,
+    summary="Otwórz zbieranie dyspozycyjności",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `manager`. Bez treści żądania. "
+        "Przenosi wyłącznie grafik `draft` do `collecting` i ustawia "
+        "`collection_opened_at` na aktualny czas UTC. Nie wymaga "
+        "zapotrzebowania. Odpowiedzi zawierają `Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule not found"),
+        409: _problem_response("schedule-state-conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def open_schedule_collection(
+    schedule_id: ScheduleIdPath,
+    response: Response,
+    identity: ManagerIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> ScheduleResponse:
+    """Open collection for a draft after its transaction commits."""
+    try:
+        schedule = open_collection(session, _parse_schedule_id(schedule_id))
+    except ScheduleNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
+        ) from None
+    except ScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Niedozwolona zmiana stanu grafiku",
+            "Zbieranie dyspozycyjności można otworzyć tylko dla grafiku draft.",
+        ) from None
+    response.headers["Cache-Control"] = "no-store"
+    return _public_schedule(schedule)

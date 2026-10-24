@@ -341,10 +341,11 @@ def test_openapi_documents_schedule_reads(schedules_api) -> None:
     paths = app.openapi()["paths"]
     assert set(paths[PATH]) == {"get", "post"}
     assert set(paths[f"{PATH}/{{schedule_id}}"]) == {"get", "delete"}
-    assert not any(
-        path.startswith(f"{PATH}/") and path != f"{PATH}/{{schedule_id}}"
-        for path in paths
-    )
+    assert {path for path in paths if path.startswith(PATH)} == {
+        PATH,
+        f"{PATH}/{{schedule_id}}",
+        f"{PATH}/{{schedule_id}}/collection-opening",
+    }
     for path, statuses, result in (
         (PATH, {"200", "401", "403", "422"}, "ScheduleListResponse"),
         (

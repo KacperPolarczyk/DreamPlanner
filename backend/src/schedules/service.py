@@ -1,6 +1,7 @@
 """Monthly schedule writing workflows and their expected conflicts."""
 
 import sqlite3
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,7 +19,7 @@ class ScheduleNotFound(Exception):
 
 
 class ScheduleStateConflict(Exception):
-    """Only a draft schedule can be deleted."""
+    """The current schedule status forbids the requested operation."""
 
 
 class ScheduleNotEmpty(Exception):
@@ -88,6 +89,29 @@ def delete_empty_draft(session: Session, schedule_id: int) -> None:
         repository.delete(schedule)
         session.flush()
         session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def open_collection(session: Session, schedule_id: int) -> Schedule:
+    """Move one locked draft to collecting and commit its first opening time.
+
+    Raises:
+        ScheduleNotFound: If the schedule no longer exists.
+        ScheduleStateConflict: If its current status is not draft.
+    """
+    try:
+        schedule = ScheduleRepository(session).get_by_id_for_update(schedule_id)
+        if schedule is None:
+            raise ScheduleNotFound
+        if schedule.status != "draft":
+            raise ScheduleStateConflict
+        schedule.status = "collecting"
+        schedule.collection_opened_at = datetime.now(UTC)
+        session.flush()
+        session.commit()
+        return schedule
     except Exception:
         session.rollback()
         raise
