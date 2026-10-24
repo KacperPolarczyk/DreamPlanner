@@ -4,10 +4,11 @@ from collections.abc import Generator
 from functools import lru_cache
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.core.config import Settings
+from src.core.database_url import normalize_postgresql_url
 
 
 class Base(DeclarativeBase):
@@ -24,9 +25,7 @@ def get_engine() -> Engine:
     database_url = Settings().database_url
     if not database_url:
         raise ValueError("DATABASE_URL must be configured for database access")
-    if make_url(database_url).drivername != "postgresql+psycopg":
-        raise ValueError("DATABASE_URL must use the postgresql+psycopg driver")
-    return create_engine(database_url, hide_parameters=True)
+    return create_engine(normalize_postgresql_url(database_url), hide_parameters=True)
 
 
 @lru_cache

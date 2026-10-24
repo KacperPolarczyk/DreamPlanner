@@ -4,7 +4,7 @@ import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import URL, Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -66,8 +66,9 @@ def test_engine_hides_bound_parameters_in_database_errors(
     marker = "unique-sensitive-auth-marker"
     monkeypatch.setenv("DATABASE_URL", database_url)
 
-    def memory_engine(url: str, **options: object) -> Engine:
-        assert url == database_url
+    def memory_engine(url: URL, **options: object) -> Engine:
+        assert url.drivername == "postgresql+psycopg"
+        assert url.password == "password"
         return create_engine("sqlite+pysqlite:///:memory:", **options)
 
     monkeypatch.setattr(database, "create_engine", memory_engine)
@@ -87,6 +88,36 @@ def test_engine_hides_bound_parameters_in_database_errors(
         assert marker in repr(error.value.params)
         assert marker not in str(error.value)
         assert marker not in repr(error.value)
+    finally:
+        engine.dispose()
+        database.get_engine.cache_clear()
+
+
+def test_engine_normalizes_terraform_url_without_losing_tls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = (
+        "postgresql://app:secret@db.example/dreamplanner"
+        "?sslmode=verify-full&sslrootcert=%2Fetc%2Froot.pem"
+    )
+    seen: dict[str, object] = {}
+    monkeypatch.setenv("DATABASE_URL", source)
+
+    def capture_engine(url: URL, **options: object) -> Engine:
+        seen["url"] = url
+        seen["options"] = options
+        return create_engine("sqlite+pysqlite:///:memory:")
+
+    monkeypatch.setattr(database, "create_engine", capture_engine)
+    database.get_engine.cache_clear()
+    engine = database.get_engine()
+    try:
+        url = seen["url"]
+        assert isinstance(url, URL)
+        assert url.drivername == "postgresql+psycopg"
+        assert url.query["sslmode"] == "verify-full"
+        assert url.query["sslrootcert"] == "/etc/root.pem"
+        assert seen["options"] == {"hide_parameters": True}
     finally:
         engine.dispose()
         database.get_engine.cache_clear()

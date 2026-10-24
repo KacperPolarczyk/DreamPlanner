@@ -3,11 +3,12 @@
 from logging.config import fileConfig
 
 from sqlalchemy import create_engine, pool
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL
 
 from alembic import context
 from src.core import models
 from src.core.config import Settings
+from src.core.database_url import normalize_postgresql_url
 
 config = context.config
 if config.config_file_name and config.get_section("loggers") is not None:
@@ -16,7 +17,7 @@ if config.config_file_name and config.get_section("loggers") is not None:
 target_metadata = models.Base.metadata
 
 
-def migration_url() -> str:
+def migration_url() -> URL:
     """Return the dedicated migration URL without exposing it in Alembic logs.
 
     Raises:
@@ -25,9 +26,7 @@ def migration_url() -> str:
     url = Settings().migration_database_url
     if not url:
         raise ValueError("MIGRATION_DATABASE_URL must be configured for migrations")
-    if make_url(url).drivername != "postgresql+psycopg":
-        raise ValueError("MIGRATION_DATABASE_URL must use postgresql+psycopg")
-    return url
+    return normalize_postgresql_url(url)
 
 
 def run_migrations_offline() -> None:

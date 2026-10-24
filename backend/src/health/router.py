@@ -3,10 +3,10 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
 from src.core.config import Settings
+from src.core.database_url import normalize_postgresql_url
 from src.health.schemas import HealthResponse
 
 router = APIRouter(tags=["health"])
@@ -23,9 +23,7 @@ def _check_database_ready() -> None:
     database_url = Settings().database_url
     if not database_url:
         raise ValueError("Database URL is absent")
-    url = make_url(database_url)
-    if url.drivername != "postgresql+psycopg":
-        raise ValueError("Unsupported database driver")
+    url = normalize_postgresql_url(database_url)
     existing_options = url.query.get("options", "")
     if isinstance(existing_options, tuple):
         existing_options = " ".join(existing_options)

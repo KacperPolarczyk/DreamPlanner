@@ -53,7 +53,10 @@ def test_readiness_checks_database_with_bounded_timeouts(monkeypatch) -> None:
 
     monkeypatch.setattr("src.health.router.create_engine", create_engine)
     monkeypatch.setenv(
-        "DATABASE_URL", "postgresql+psycopg://reader:secret@127.0.0.1:5432/example"
+        "DATABASE_URL",
+        "postgresql://reader:secret@127.0.0.1:5432/example"
+        "?sslmode=verify-full&sslrootcert=%2Fetc%2Froot.pem"
+        "&application_name=readiness&options=-c%20lock_timeout%3D1000",
     )
     with TestClient(app) as client:
         response = client.get("/api/v1/health/ready")
@@ -64,6 +67,11 @@ def test_readiness_checks_database_with_bounded_timeouts(monkeypatch) -> None:
     assert seen["disposed"] is True
     assert seen["url"].query["connect_timeout"] == "2"
     assert "statement_timeout=2000" in seen["url"].query["options"]
+    assert "lock_timeout=1000" in seen["url"].query["options"]
+    assert seen["url"].drivername == "postgresql+psycopg"
+    assert seen["url"].query["sslmode"] == "verify-full"
+    assert seen["url"].query["sslrootcert"] == "/etc/root.pem"
+    assert seen["url"].query["application_name"] == "readiness"
     assert seen["options"]["hide_parameters"] is True
 
 
