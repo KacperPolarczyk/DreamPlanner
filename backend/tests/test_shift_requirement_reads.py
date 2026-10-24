@@ -602,7 +602,7 @@ def test_openapi_documents_read_operations_and_contract(
     list_path = f"{PATH}/{{schedule_id}}/shift-requirements"
     detail_path = f"{list_path}/{{requirement_id}}"
     assert set(paths[list_path]) == {"get", "post"}
-    assert set(paths[detail_path]) == {"get", "patch"}
+    assert set(paths[detail_path]) == {"get", "patch", "delete"}
 
     list_operation = paths[list_path]["get"]
     detail_operation = paths[detail_path]["get"]

@@ -212,6 +212,35 @@ def update_shift_requirement(
         raise
 
 
+def delete_shift_requirement(
+    session: Session, schedule_id: int, requirement_id: int
+) -> None:
+    """Delete an unassigned requirement from a locked draft schedule."""
+    try:
+        schedules = ScheduleRepository(session)
+        schedule = schedules.get_by_id_for_update(schedule_id)
+        if schedule is None:
+            raise ScheduleNotFound
+        if schedule.status != "draft":
+            raise ScheduleStateConflict
+
+        requirements = ShiftRequirementRepository(session)
+        requirement = requirements.get_for_schedule_for_update(
+            schedule_id, requirement_id
+        )
+        if requirement is None:
+            raise ShiftRequirementNotFound
+        if requirements.has_assignments(requirement_id):
+            raise ShiftRequirementAssigned
+
+        requirements.delete(requirement)
+        session.flush()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
 def _period_conflict(exc: IntegrityError) -> bool:
     """Recognize only the schedules year and month unique constraint."""
     original = exc.orig

@@ -148,6 +148,10 @@ class ShiftRequirementRepository:
         """Stage a requirement in the caller's transaction."""
         self.session.add(requirement)
 
+    def delete(self, requirement: ShiftRequirement) -> None:
+        """Stage deletion of one requirement in the caller's transaction."""
+        self.session.delete(requirement)
+
     def get_committed(self, requirement_id: int) -> tuple[ShiftRequirement, Position]:
         """Return newly inserted requirement and joined position."""
         return self.session.execute(

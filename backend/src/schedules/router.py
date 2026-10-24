@@ -39,6 +39,7 @@ from src.schedules.service import (
     create_schedule,
     create_shift_requirement,
     delete_empty_draft,
+    delete_shift_requirement,
     open_collection,
     update_shift_requirement,
 )
@@ -439,6 +440,62 @@ def update_existing_shift_requirement(
         ) from None
     response.headers["Cache-Control"] = "no-store"
     return _public_shift_requirement(requirement, position)
+
+
+@router.delete(
+    "/{schedule_id}/shift-requirements/{requirement_id}",
+    status_code=204,
+    summary="Usuń nieprzydzielone zapotrzebowanie",
+    description=(
+        "Wymaga aktywnej roli `manager` oraz grafiku `draft`. Usuwa wyłącznie "
+        "zapotrzebowanie bez powiązanych przydziałów; odpowiedź 204 nie ma "
+        "treści i zawiera `Cache-Control: no-store`."
+    ),
+    responses={
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule or requirement not found"),
+        409: _problem_response("schedule-state-conflict or shift-requirement-assigned"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def delete_existing_shift_requirement(
+    schedule_id: ScheduleIdPath,
+    requirement_id: Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)],
+    response: Response,
+    identity: ManagerIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
+    session: SessionDependency,
+) -> None:
+    """Delete one unassigned requirement after its transaction commits."""
+    try:
+        delete_shift_requirement(
+            session,
+            _parse_schedule_id(schedule_id),
+            _parse_requirement_id(requirement_id),
+        )
+    except (ScheduleNotFound, ShiftRequirementNotFound):
+        raise AuthHttpError(
+            404,
+            "about:blank",
+            "Nie znaleziono zapotrzebowania",
+            "Zasób nie istnieje.",
+        ) from None
+    except ScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Zapotrzebowanie można usuwać tylko w grafiku draft.",
+        ) from None
+    except ShiftRequirementAssigned:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:shift-requirement-assigned",
+            "Zapotrzebowanie ma przydziały",
+            "Zapotrzebowania z istniejącymi przydziałami nie można usunąć.",
+        ) from None
+    response.headers["Cache-Control"] = "no-store"
 
 
 @router.post(
