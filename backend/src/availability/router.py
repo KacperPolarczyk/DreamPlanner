@@ -1,4 +1,4 @@
-"""HTTP endpoints for reading monthly availability submissions."""
+"""HTTP endpoints for monthly availability submissions."""
 
 from datetime import UTC, datetime
 from typing import Annotated, Literal
@@ -76,6 +76,12 @@ def _parse_path_id(value: str, field: str) -> int:
     if parsed > MAX_BIGINT:
         raise RequestValidationError([{"type": "value_error", "loc": ("path", field)}])
     return parsed
+
+
+async def _reject_nonempty_body(request: Request) -> None:
+    """Reject content on the bodyless availability deletion operation."""
+    if await request.body():
+        raise RequestValidationError([{"type": "extra_forbidden", "loc": ("body",)}])
 
 
 def _query_error(field: str, error_type: str = "value_error") -> None:
@@ -215,7 +221,10 @@ def _openapi_query_parameters() -> list[dict[str, object]]:
             "name": "user_id",
             "in": "query",
             "required": False,
-            "description": "Dostępny wyłącznie dla ról manager i admin.",
+            "description": (
+                "Dostępny wyłącznie dla ról manager i admin; 1–19 cyfr ASCII, "
+                "wartość 1–9223372036854775807."
+            ),
             "schema": {"type": "string", "pattern": "^[0-9]{1,19}$"},
         },
         {
@@ -237,7 +246,11 @@ def _openapi_query_parameters() -> list[dict[str, object]]:
         "wszystkie. Odczyt działa w każdym stanie grafiku. Lista nie zawiera "
         "entries i używa stałego sortowania user_id ASC, id ASC. Filtr "
         "user_id jest dostępny wyłącznie managerowi i adminowi; employee "
-        "otrzymuje 403. Chroniona odpowiedź ma Cache-Control: no-store."
+        "otrzymuje 403. schedule_id: 1–19 cyfr ASCII, zakres BIGINT 0–"
+        "9223372036854775807. limit: 1–100, offset: 0–BIGINT, state: draft "
+        "lub submitted; total liczy widoczne rekordy przed paginacją. "
+        "Identyfikatory BIGINT w JSON są stringami. Chroniona odpowiedź ma "
+        "Cache-Control: no-store."
     ),
     openapi_extra={"parameters": _openapi_query_parameters()},
     responses={
@@ -290,7 +303,10 @@ def list_availability_submissions(
         "Wymaga Bearer JWT i aktualnej roli employee, manager lub admin. "
         "Employee może odczytać wyłącznie własny zasób; cudza i nieistniejąca "
         "deklaracja dają ten sam 404. Odczyt działa w każdym stanie grafiku. "
-        "Entries są sortowane po work_date, start_time i id. Odpowiedź ma "
+        "schedule_id i submission_id: 1–19 cyfr ASCII, zakres BIGINT 0–"
+        "9223372036854775807. Identyfikatory BIGINT w JSON są stringami. "
+        "Entries są sortowane po work_date, start_time i id; daty mają format "
+        "YYYY-MM-DD, godziny lokalne Europe/Warsaw HH:MM:SS. Odpowiedź ma "
         "Cache-Control: no-store."
     ),
     responses={
@@ -348,14 +364,25 @@ def read_availability_submission(
     description=(
         "Dostępne wyłącznie dla aktywnego employee. Tworzy jedną własną "
         "deklarację dla grafiku w stanie collecting. Odpowiedź po commit ma "
-        "Cache-Control: no-store i Location."
+        "Cache-Control: no-store i Location. schedule_id: 1–19 cyfr ASCII, "
+        "zakres BIGINT 0–9223372036854775807. Body wymaga entries; submit "
+        "jest ścisłym boolean, domyślnie false. Wpisy wymagają daty "
+        "YYYY-MM-DD z miesiąca grafiku, godzin HH:MM:SS w Europe/Warsaw, "
+        "status available albo unavailable. Przedziały są półotwarte, mogą "
+        "się stykać, lecz nie nakładać; godziny niejednoznaczne lub "
+        "nieistniejące przy DST są odrzucane. note jest przycinane, puste "
+        "daje null, znaki kontrolne są zabronione. Dodatkowe pola są "
+        "zabronione; identyfikatory BIGINT w odpowiedzi są stringami."
     ),
     responses={
         400: _problem_response("Malformed JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Employee role required"),
         404: _problem_response("Schedule not found"),
-        409: _problem_response("Schedule state or declaration conflict"),
+        409: _problem_response(
+            "urn:dreamplanner:problem:schedule-state-conflict or "
+            "urn:dreamplanner:problem:availability-submission-conflict"
+        ),
         422: _problem_response("validation-error", validation=True),
     },
 )
@@ -412,15 +439,26 @@ def create_availability_submission(
     summary="Edytuj lub prześlij własną deklarację dyspozycyjności",
     description=(
         "Dostępne wyłącznie dla aktywnego employee i własnej deklaracji. "
-        "Pole entries, jeśli podane, zastępuje całą listę. Odpowiedź zawiera "
-        "pełny zasób i Cache-Control: no-store."
+        "Zapis wymaga grafiku collecting. schedule_id i submission_id: 1–19 "
+        "cyfr ASCII, zakres BIGINT 0–9223372036854775807. Pole entries, "
+        "jeśli podane, zastępuje całą listę: data YYYY-MM-DD w miesiącu "
+        "grafiku, godziny HH:MM:SS w Europe/Warsaw, status available albo "
+        "unavailable, bez nakładania i niejednoznacznych lub nieistniejących "
+        "godzin przy DST. note jest przycinane, puste daje null, znaki "
+        "kontrolne są zabronione. submit: true bez entries przesyła obecną "
+        "listę; entries bez submit: true tworzy wersję roboczą. Puste body "
+        "lub samo submit: false daje 422. Odpowiedź zawiera pełny zasób, "
+        "identyfikatory BIGINT jako stringi i Cache-Control: no-store."
     ),
     responses={
         400: _problem_response("Malformed JSON"),
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Employee role required"),
         404: _problem_response("Schedule or visible submission not found"),
-        409: _problem_response("Schedule state or availability entry conflict"),
+        409: _problem_response(
+            "urn:dreamplanner:problem:schedule-state-conflict or "
+            "urn:dreamplanner:problem:availability-entry-overlap"
+        ),
         422: _problem_response("validation-error", validation=True),
     },
 )
@@ -482,21 +520,26 @@ def update_availability_submission(
         "Dostępne wyłącznie dla aktywnego employee i własnej, nieprzesłanej "
         "deklaracji w grafiku collecting. Manager i admin otrzymują 403; "
         "brak lub cudza deklaracja dają ten sam 404. Odpowiedź 204 nie ma "
-        "treści i zawiera Cache-Control: no-store."
+        "treści i zawiera Cache-Control: no-store. schedule_id i submission_id: "
+        "1–19 cyfr ASCII, zakres BIGINT 0–9223372036854775807. Niepuste "
+        "body daje 422."
     ),
     responses={
         401: _problem_response("Invalid access token or session"),
         403: _problem_response("Employee role required"),
         404: _problem_response("Schedule or visible submission not found"),
-        409: _problem_response("Schedule state or submitted declaration conflict"),
+        409: _problem_response(
+            "urn:dreamplanner:problem:schedule-state-conflict or "
+            "urn:dreamplanner:problem:availability-submission-submitted"
+        ),
         422: _problem_response("validation-error", validation=True),
     },
 )
 def delete_availability_submission(
     schedule_id: PathId,
     submission_id: Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)],
-    response: Response,
     identity: EmployeeIdentity,
+    body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
     session: SessionDependency,
 ) -> Response:
     """Delete the authenticated employee's unsubmitted declaration."""
@@ -531,5 +574,4 @@ def delete_availability_submission(
             "Robocze deklaracje można usuwać przed przesłaniem.",
         ) from None
 
-    response.headers["Cache-Control"] = "no-store"
     return Response(status_code=204, headers={"Cache-Control": "no-store"})

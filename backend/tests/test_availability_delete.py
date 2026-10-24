@@ -47,7 +47,9 @@ def _seed_submission(
 
 
 @pytest.mark.parametrize("entries", [(), (("2027-01-05", "08:00:00", "10:00:00"),)])
-def test_delete_owned_draft_returns_empty_204_and_removes_entries(create_api, entries):
+def test_delete_owned_draft_returns_empty_204_and_declares_cascade_fk(
+    create_api, entries
+):
     app, token, _, engine = create_api
     submission_id = _seed_submission(engine, entries=entries)
 
@@ -63,8 +65,8 @@ def test_delete_owned_draft_returns_empty_204_and_removes_entries(create_api, en
     assert repeated.headers["cache-control"] == "no-store"
     with Session(engine) as session:
         assert session.get(AvailabilitySubmission, submission_id) is None
-        # This SQLite fixture disables FK enforcement. PostgreSQL's real
-        # ON DELETE CASCADE is verified in the dedicated database step.
+        # This SQLite fixture disables FK enforcement. Runtime cascading
+        # requires verification in the dedicated PostgreSQL step.
         assert (
             next(
                 iter(AvailabilityEntry.__table__.c.submission_id.foreign_keys)
@@ -83,6 +85,33 @@ def test_deleted_draft_is_absent_from_later_list_and_detail(create_api):
     assert listed.status_code == 200
     assert listed.json()["items"] == []
     assert detailed.status_code == 404
+
+
+@pytest.mark.parametrize("body", [b"{}", b"null", b" "])
+def test_delete_rejects_nonempty_body_without_removing_draft(create_api, body):
+    app, token, _, engine = create_api
+    submission_id = _seed_submission(
+        engine, entries=(("2027-01-05", "08:00:00", "10:00:00"),)
+    )
+    with TestClient(app) as client:
+        response = client.request(
+            "DELETE",
+            _delete_path(submission_id),
+            headers=_headers(token),
+            content=body,
+        )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["type"] == "urn:dreamplanner:problem:validation-error"
+    with Session(engine) as session:
+        assert session.get(AvailabilitySubmission, submission_id) is not None
+        assert (
+            session.query(AvailabilityEntry)
+            .filter_by(submission_id=submission_id)
+            .count()
+            == 1
+        )
 
 
 @pytest.mark.parametrize("entries", [(), (("2027-01-05", "08:00:00", "10:00:00"),)])
@@ -153,6 +182,16 @@ def test_manager_and_admin_cannot_delete(create_api, role):
     actor.role.code = role
     with TestClient(app) as client:
         response = client.delete(_delete_path(9999), headers=_headers(token))
+    assert response.status_code == 403
+
+
+def test_role_precedes_body_and_resource_checks(create_api):
+    app, token, actor, _ = create_api
+    actor.role.code = "manager"
+    with TestClient(app) as client:
+        response = client.request(
+            "DELETE", _delete_path(9999), headers=_headers(token), content=b"{}"
+        )
     assert response.status_code == 403
 
 
@@ -256,9 +295,15 @@ def test_delete_openapi_documents_employee_rbac_and_problem_responses(create_api
         "/api/v1/schedules/{schedule_id}/availability-submissions/{submission_id}"
     ]["delete"]
     assert "employee" in operation["description"]
+    assert "1–19 cyfr ASCII" in operation["description"]
+    assert "Niepuste body daje 422" in operation["description"]
     assert {"204", "401", "403", "404", "409", "422"} <= set(operation["responses"])
     assert "content" not in operation["responses"]["204"]
     assert "application/problem+json" in operation["responses"]["409"]["content"]
+    assert (
+        "availability-submission-submitted"
+        in operation["responses"]["409"]["description"]
+    )
 
 
 @pytest.mark.parametrize("identifier", ["+1", "-1", "１２", "9223372036854775808"])

@@ -525,6 +525,7 @@ def test_openapi_documents_availability_endpoints_and_query_contract(availabilit
     assert set(paths[detail_path]) == {"get", "patch", "delete"}
     operation = paths[list_path]["get"]
     assert operation["security"] == [{"BearerAuth": []}]
+    assert "1–19 cyfr ASCII" in operation["description"]
     assert {"200", "401", "403", "404", "422"} <= set(operation["responses"])
     assert {
         parameter["name"]
@@ -533,12 +534,23 @@ def test_openapi_documents_availability_endpoints_and_query_contract(availabilit
     } == {"limit", "offset", "user_id", "state"}
     create_operation = paths[list_path]["post"]
     assert create_operation["security"] == [{"BearerAuth": []}]
+    assert "Europe/Warsaw" in create_operation["description"]
+    assert (
+        "availability-submission-conflict"
+        in create_operation["responses"]["409"]["description"]
+    )
     assert "201" in create_operation["responses"]
     assert "requestBody" in create_operation
     update_operation = paths[detail_path]["patch"]
     assert update_operation["security"] == [{"BearerAuth": []}]
+    assert "submit: true bez entries" in update_operation["description"]
+    assert (
+        "availability-entry-overlap"
+        in update_operation["responses"]["409"]["description"]
+    )
     assert "200" in update_operation["responses"]
     assert "requestBody" in update_operation
+    assert paths[detail_path]["get"]["security"] == [{"BearerAuth": []}]
     detail_schema = app.openapi()["components"]["schemas"][
         "AvailabilitySubmissionResponse"
     ]

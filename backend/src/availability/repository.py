@@ -1,4 +1,4 @@
-"""Read queries for monthly availability submissions."""
+"""Persistence and read queries for monthly availability submissions."""
 
 from typing import Literal
 
