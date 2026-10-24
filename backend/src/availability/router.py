@@ -16,10 +16,16 @@ from src.availability.schemas import (
     AvailabilitySubmissionListResponse,
     AvailabilitySubmissionResponse,
     AvailabilitySubmissionSummary,
+    CreateAvailabilitySubmissionInput,
 )
 from src.availability.service import (
     AvailabilityScheduleNotFound,
+    AvailabilityScheduleStateConflict,
+    AvailabilitySubmissionConflict,
     AvailabilitySubmissionNotFound,
+)
+from src.availability.service import (
+    create_availability_submission as create_submission,
 )
 from src.availability.service import (
     list_availability_submissions as list_submissions,
@@ -37,6 +43,7 @@ ReadIdentity = Annotated[
 PathId = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 MAX_BIGINT = 9223372036854775807
 ALLOWED_QUERY = {"limit", "offset", "user_id", "state"}
+EmployeeIdentity = Annotated[ActiveIdentity, Depends(require_roles("employee"))]
 
 
 def _problem_response(description: str, *, validation: bool = False):
@@ -322,3 +329,69 @@ def read_availability_submission(
         **_summary(submission).model_dump(),
         entries=[_entry(entry) for entry in entries],
     )
+
+
+@router.post(
+    "/{schedule_id}/availability-submissions",
+    response_model=AvailabilitySubmissionResponse,
+    status_code=201,
+    summary="Utwórz własną deklarację dyspozycyjności",
+    description=(
+        "Dostępne wyłącznie dla aktywnego employee. Tworzy jedną własną "
+        "deklarację dla grafiku w stanie collecting. Odpowiedź po commit ma "
+        "Cache-Control: no-store i Location."
+    ),
+    responses={
+        400: _problem_response("Malformed JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Employee role required"),
+        404: _problem_response("Schedule not found"),
+        409: _problem_response("Schedule state or declaration conflict"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def create_availability_submission(
+    schedule_id: PathId,
+    payload: CreateAvailabilitySubmissionInput,
+    response: Response,
+    identity: EmployeeIdentity,
+    session: SessionDependency,
+) -> AvailabilitySubmissionResponse:
+    """Create the authenticated employee's one monthly declaration."""
+    parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
+    try:
+        result = create_submission(
+            session,
+            parsed_schedule_id,
+            identity.user_id,
+            entries=payload.entries,
+            submit=payload.submit,
+        )
+    except AvailabilityScheduleNotFound:
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
+        ) from None
+    except AvailabilityScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Operacja jest niedostępna w bieżącym stanie grafiku.",
+        ) from None
+    except AvailabilitySubmissionConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:availability-submission-conflict",
+            "Deklaracja już istnieje",
+            "Pracownik ma już deklarację dla tego grafiku.",
+        ) from None
+    except ValueError:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("body", "entries")}]
+        ) from None
+
+    response.headers["Location"] = (
+        f"/api/v1/schedules/{parsed_schedule_id}/availability-submissions/{result.id}"
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return result

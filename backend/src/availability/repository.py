@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.availability.models import AvailabilityEntry, AvailabilitySubmission
+from src.schedules.models import Schedule
 
 
 class AvailabilitySubmissionRepository:
@@ -13,6 +14,38 @@ class AvailabilitySubmissionRepository:
 
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def get_schedule_for_update(self, schedule_id: int) -> Schedule | None:
+        """Lock and refresh the schedule before checking its write state."""
+        return self.session.scalar(
+            select(Schedule)
+            .where(Schedule.id == schedule_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+    def get_for_user(
+        self, schedule_id: int, user_id: int
+    ) -> AvailabilitySubmission | None:
+        """Return the existing declaration for one employee and schedule."""
+        return self.session.scalar(
+            select(AvailabilitySubmission).where(
+                AvailabilitySubmission.schedule_id == schedule_id,
+                AvailabilitySubmission.user_id == user_id,
+            )
+        )
+
+    def add_submission(self, submission: AvailabilitySubmission) -> None:
+        """Stage a declaration in the caller-owned transaction."""
+        self.session.add(submission)
+
+    def add_entries(self, entries: list[AvailabilityEntry]) -> None:
+        """Stage declaration entries in the caller-owned transaction."""
+        self.session.add_all(entries)
+
+    def get_entries(self, submission_id: int) -> list[AvailabilityEntry]:
+        """Return entries in the public response order."""
+        return self.list_entries(submission_id)
 
     def list_for_schedule(
         self,
