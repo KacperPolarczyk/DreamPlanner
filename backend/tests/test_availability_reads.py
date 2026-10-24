@@ -516,12 +516,12 @@ def test_employee_user_filter_is_forbidden_even_when_repeated(availability_api) 
     assert response.status_code == 403
 
 
-def test_openapi_documents_only_read_endpoints_and_query_contract(availability_api):
+def test_openapi_documents_availability_endpoints_and_query_contract(availability_api):
     app, _, _, _ = availability_api
     paths = app.openapi()["paths"]
     list_path = "/api/v1/schedules/{schedule_id}/availability-submissions"
     detail_path = f"{list_path}/{{submission_id}}"
-    assert set(paths[list_path]) == {"get"}
+    assert set(paths[list_path]) == {"get", "post"}
     assert set(paths[detail_path]) == {"get"}
     operation = paths[list_path]["get"]
     assert operation["security"] == [{"BearerAuth": []}]
@@ -531,6 +531,10 @@ def test_openapi_documents_only_read_endpoints_and_query_contract(availability_a
         for parameter in operation["parameters"]
         if parameter["in"] == "query"
     } == {"limit", "offset", "user_id", "state"}
+    create_operation = paths[list_path]["post"]
+    assert create_operation["security"] == [{"BearerAuth": []}]
+    assert "201" in create_operation["responses"]
+    assert "requestBody" in create_operation
     detail_schema = app.openapi()["components"]["schemas"][
         "AvailabilitySubmissionResponse"
     ]
