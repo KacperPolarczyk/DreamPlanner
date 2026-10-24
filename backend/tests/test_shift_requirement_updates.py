@@ -210,6 +210,7 @@ def test_patch_respects_schedule_status(
         {"required_workers": 2147483648},
         {"required_workers": True},
         {"required_workers": "3"},
+        {"note": "memo\n"},
         {"work_date": "2026-10-20"},
         {"start_time": "16:00:00"},
         {"start_time": "20:00:00", "end_time": "08:00:00"},

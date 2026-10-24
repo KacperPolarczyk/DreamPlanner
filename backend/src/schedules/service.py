@@ -128,6 +128,8 @@ def create_shift_requirement(
         requirements.add(requirement)
         session.flush()
         requirement, position = requirements.get_committed(requirement.id)
+        session.expunge(requirement)
+        session.expunge(position)
         session.commit()
         return requirement, position
     except IntegrityError as exc:

@@ -77,7 +77,7 @@ class CreateShiftRequirementInput(BaseModel):
     work_date: date
     start_time: time
     end_time: time
-    required_workers: int = Field(strict=True, ge=1)
+    required_workers: int = Field(strict=True, ge=1, le=2147483647)
     note: str | None = None
 
     @field_validator("position_id", mode="before")
@@ -112,10 +112,11 @@ class CreateShiftRequirementInput(BaseModel):
     def normalize_note(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        value = value.strip()
+        if not value.strip():
+            return None
         if any(category(char) == "Cc" for char in value):
             raise ValueError("note contains control characters")
-        return value or None
+        return value.strip()
 
 
 class UpdateShiftRequirementInput(CreateShiftRequirementInput):

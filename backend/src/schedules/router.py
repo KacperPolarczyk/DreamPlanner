@@ -145,7 +145,11 @@ def _parse_requirement_id(requirement_id: str) -> int:
         "zapotrzebowanie niezależnie od statusu i twórcy grafiku. Filtry "
         "`work_date` i `position_id` można łączyć. Kolejność jest stała: "
         "`work_date ASC, start_time ASC, id ASC`; `total` liczy wyniki "
-        "po filtrach przed paginacją. Odpowiedź zawiera `Cache-Control: no-store`."
+        "po filtrach przed paginacją. `work_date` wymaga `YYYY-MM-DD`, "
+        "`position_id` dodatniego BIGINT, a identyfikator grafiku cyfr ASCII "
+        "w zakresie 0–9223372036854775807 (do 19 cyfr). Godziny odpowiedzi "
+        "to `HH:MM:SS` w `Europe/Warsaw`. Odpowiedź zawiera "
+        "`Cache-Control: no-store`."
     ),
     responses={
         401: _problem_response("Invalid access token or session"),
@@ -160,7 +164,9 @@ def list_shift_requirements(
     response: Response,
     identity: ReadIdentity,
     session: SessionDependency,
-    work_date: date | None = None,
+    work_date: Annotated[
+        str | None, Query(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    ] = None,
     position_id: Annotated[
         str | None, Query(pattern=r"^[0-9]+$", max_length=19)
     ] = None,
@@ -193,6 +199,13 @@ def list_shift_requirements(
             ]
         )
 
+    try:
+        parsed_work_date = date.fromisoformat(work_date) if work_date else None
+    except ValueError:
+        raise RequestValidationError(
+            [{"type": "value_error", "loc": ("query", "work_date")}]
+        ) from None
+
     parsed_position_id = int(position_id) if position_id is not None else None
     if parsed_position_id == 0 or (
         parsed_position_id is not None and parsed_position_id > MAX_BIGINT
@@ -209,7 +222,7 @@ def list_shift_requirements(
 
     rows, total = ShiftRequirementRepository(session).list_for_schedule(
         parsed_schedule_id,
-        work_date=work_date,
+        work_date=parsed_work_date,
         position_id=parsed_position_id,
         limit=limit,
         offset=offset,
@@ -234,6 +247,9 @@ def list_shift_requirements(
         "Wymaga Bearer JWT i aktywnej roli `admin` lub `manager`. Zwraca "
         "pozycję tylko wtedy, gdy należy do wskazanego grafiku. Odczyt jest "
         "dozwolony w każdym statusie grafiku oraz dla nieaktywnego stanowiska. "
+        "Identyfikatory ścieżki to cyfry ASCII w zakresie "
+        "0–9223372036854775807 (do 19 cyfr). Godziny odpowiedzi to "
+        "`HH:MM:SS` w `Europe/Warsaw`. "
         "Odpowiedź zawiera `Cache-Control: no-store`."
     ),
     responses={
@@ -276,7 +292,10 @@ def read_shift_requirement(
     summary="Utwórz zapotrzebowanie na pracowników",
     description=(
         "Wymaga roli manager i grafiku draft. Daty i lokalne godziny "
-        "stosują kontrakt shift requirements; przedziały mogą się nakładać. "
+        "wymagają `YYYY-MM-DD` i `HH:MM:SS` w `Europe/Warsaw`; przedziały "
+        "mogą się nakładać. Identyfikator grafiku to cyfry ASCII w zakresie "
+        "0–9223372036854775807 (do 19 cyfr), a `position_id` to dodatni "
+        "dziesiętny string BIGINT. "
         "Odpowiedź zwraca Location oraz Cache-Control: no-store."
     ),
     responses={
@@ -360,7 +379,10 @@ def create_new_shift_requirement(
         "Wymaga roli manager oraz grafiku draft. Zmienia tylko przesłane pola. "
         "Jeśli istnieją przydziały, dozwolona jest zmiana wyłącznie notatki lub "
         "wartości strukturalnych bez rzeczywistej zmiany. Odpowiedź zawiera "
-        "Cache-Control: no-store."
+        "Cache-Control: no-store. Identyfikatory ścieżki to cyfry ASCII w "
+        "zakresie 0–9223372036854775807 (do 19 cyfr); `position_id` jest "
+        "dodatnim stringiem BIGINT. Daty i godziny wymagają `YYYY-MM-DD` oraz "
+        "`HH:MM:SS` w `Europe/Warsaw`."
     ),
     responses={
         400: _problem_response("Invalid JSON"),
@@ -449,7 +471,8 @@ def update_existing_shift_requirement(
     description=(
         "Wymaga aktywnej roli `manager` oraz grafiku `draft`. Usuwa wyłącznie "
         "zapotrzebowanie bez powiązanych przydziałów; odpowiedź 204 nie ma "
-        "treści i zawiera `Cache-Control: no-store`."
+        "treści i zawiera `Cache-Control: no-store`. Identyfikatory ścieżki "
+        "to cyfry ASCII w zakresie 0–9223372036854775807 (do 19 cyfr)."
     ),
     responses={
         401: _problem_response("Invalid access token or session"),

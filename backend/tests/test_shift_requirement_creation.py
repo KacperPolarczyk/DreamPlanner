@@ -93,6 +93,19 @@ def test_note_is_trimmed_and_null_is_preserved(shift_requirements_api):
     assert explicit_null.json()["note"] is None
 
 
+def test_required_workers_accepts_postgres_integer_maximum(shift_requirements_api):
+    app, token, actor, _ = shift_requirements_api
+    actor.role.code = "manager"
+    with TestClient(app) as client:
+        response = client.post(
+            _list_path(),
+            headers=_headers(token),
+            json=_payload(required_workers=2147483647),
+        )
+    assert response.status_code == 201
+    assert response.json()["required_workers"] == 2147483647
+
+
 def test_touching_and_overlapping_intervals_are_allowed(shift_requirements_api):
     app, token, actor, _ = shift_requirements_api
     actor.role.code = "manager"
@@ -149,6 +162,8 @@ def test_role_is_checked_before_schedule_lookup(shift_requirements_api):
         {"start_time": "08:00"},
         {"required_workers": True},
         {"required_workers": "2"},
+        {"required_workers": 2147483648},
+        {"note": "memo\n"},
         {"id": "4"},
         {"schedule_id": "45"},
         {"unexpected": "x"},

@@ -565,6 +565,8 @@ def test_employee_is_rejected_before_resource_lookup(
     [
         (_list_path(), {"work_date": "2026-02-30"}),
         (_list_path(), {"work_date": "not-a-date"}),
+        (_list_path(), {"work_date": "2026-11-02T00:00:00"}),
+        (_list_path(), {"work_date": "1762041600"}),
         (_list_path(), {"position_id": "0"}),
         (_list_path(), {"position_id": "9223372036854775808"}),
         (_list_path(), {"limit": "0"}),
