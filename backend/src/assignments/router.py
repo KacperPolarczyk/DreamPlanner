@@ -1,18 +1,32 @@
-"""HTTP read endpoints for manager shift assignments."""
+"""HTTP endpoints for manager shift assignments."""
 
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Request, Response
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from src.assignments.models import ShiftAssignment
-from src.assignments.schemas import ShiftAssignmentListResponse, ShiftAssignmentResponse
+from src.assignments.schemas import (
+    CreateShiftAssignmentInput,
+    ShiftAssignmentListResponse,
+    ShiftAssignmentResponse,
+)
 from src.assignments.service import (
+    AssignmentAlreadyExists,
+    AssignmentCapacityExceeded,
     AssignmentNotFound,
+    AssignmentOverlap,
     AssignmentReadForbidden,
+    AssignmentRequirementNotFound,
     AssignmentScheduleNotFound,
+    AssignmentScheduleStateConflict,
+    AssignmentUserIneligible,
+    AssignmentUserNotFound,
+    AssignmentWarningRequired,
+    AssignmentWriteForbidden,
+    assignment_response,
+    create_shift_assignment,
     list_shift_assignments,
     read_shift_assignment,
 )
@@ -20,11 +34,11 @@ from src.auth.dependencies import AuthHttpError, require_roles
 from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
-from src.schedules.models import ShiftRequirement
 
 router = APIRouter(prefix="/schedules", tags=["shift-assignments"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 ReadIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))]
+ManagerIdentity = Annotated[ActiveIdentity, Depends(require_roles("manager"))]
 PathId = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 MAX_BIGINT = 9223372036854775807
 ALLOWED_QUERY = {"limit", "offset", "work_date", "shift_requirement_id", "user_id"}
@@ -139,34 +153,6 @@ def _parse_query(
     return limit, offset, work_date, requirement_id, user_id
 
 
-def _utc(value: datetime | None) -> datetime | None:
-    """Represent stored event instants in UTC without changing local shift time."""
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
-def _public_assignment(
-    assignment: ShiftAssignment, requirement: ShiftRequirement
-) -> ShiftAssignmentResponse:
-    """Build the approved response from one joined row."""
-    return ShiftAssignmentResponse(
-        id=str(assignment.id),
-        schedule_id=str(requirement.schedule_id),
-        shift_requirement_id=str(assignment.shift_requirement_id),
-        user_id=str(assignment.user_id),
-        assigned_by=str(assignment.assigned_by),
-        assigned_at=_utc(assignment.assigned_at),
-        warning_type=assignment.warning_type,
-        warning_acknowledged_at=_utc(assignment.warning_acknowledged_at),
-        work_date=requirement.work_date,
-        start_time=requirement.start_time,
-        end_time=requirement.end_time,
-    )
-
-
 def _query_parameters() -> list[dict[str, object]]:
     """Expose strict manually parsed filters in OpenAPI."""
     return [
@@ -263,7 +249,7 @@ def list_assignments(
     response.headers["Cache-Control"] = "no-store"
     return ShiftAssignmentListResponse(
         items=[
-            _public_assignment(assignment, requirement)
+            assignment_response(assignment, requirement)
             for assignment, requirement in rows
         ],
         limit=limit,
@@ -314,4 +300,118 @@ def get_assignment(
             404, "about:blank", "Nie znaleziono przydziału", "Zasób nie istnieje."
         ) from None
     response.headers["Cache-Control"] = "no-store"
-    return _public_assignment(assignment, requirement)
+    return assignment_response(assignment, requirement)
+
+
+@router.post(
+    "/{schedule_id}/shift-assignments",
+    status_code=201,
+    response_model=ShiftAssignmentResponse,
+    summary="Przypisz pracownika do zmiany",
+    description=(
+        "Wymaga Bearer JWT i aktualnej roli `manager`; `admin` i `employee` "
+        "otrzymują 403. Grafik musi być w stanie `closed`. Body wymaga "
+        "dodatnich dziesiętnych stringów BIGINT dla shift_requirement_id i "
+        "user_id; warning_acknowledged jest opcjonalnym boolean (domyślnie "
+        "false). Wymagany jest aktywny, aktywowany employee. Nieaktywne "
+        "stanowisko nie blokuje przydziału. Liczba przydziałów nie może "
+        "przekroczyć required_workers, a zmiany pracownika nie mogą się "
+        "nakładać. Oceniane są tylko przesłane deklaracje dyspozycyjności: "
+        "unavailable ma pierwszeństwo, pełne pokrycie available nie wymaga "
+        "ostrzeżenia, pozostałe przypadki to unknown. Dla unavailable i "
+        "unknown wymagane jest jawne potwierdzenie. Daty i godziny zmiany "
+        "są lokalne Europe/Warsaw; timestampy audytu są UTC RFC 3339. "
+        "Sukces zwraca Location i Cache-Control: no-store."
+    ),
+    responses={
+        400: _problem_response("Malformed JSON"),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Manager required"),
+        404: _problem_response("Schedule, requirement or user not found"),
+        409: _problem_response(
+            "schedule-state-conflict, assignment-user-ineligible, "
+            "assignment-capacity-exceeded, assignment-already-exists, "
+            "assignment-overlap or assignment-warning-required"
+        ),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def post_assignment(
+    schedule_id: PathId,
+    data: CreateShiftAssignmentInput,
+    response: Response,
+    identity: ManagerIdentity,
+    session: SessionDependency,
+) -> ShiftAssignmentResponse:
+    """Create and return one committed assignment with a canonical Location."""
+    parsed_schedule_id = _parse_path_id(schedule_id, "schedule_id")
+    try:
+        result = create_shift_assignment(
+            session,
+            parsed_schedule_id,
+            actor_id=identity.user_id,
+            actor_role=identity.role,
+            requirement_id=int(data.shift_requirement_id),
+            user_id=int(data.user_id),
+            warning_acknowledged=data.warning_acknowledged,
+        )
+    except AssignmentWriteForbidden:
+        raise AuthHttpError(
+            403, "about:blank", "Odmowa dostępu", "Brak uprawnienia."
+        ) from None
+    except (
+        AssignmentScheduleNotFound,
+        AssignmentRequirementNotFound,
+        AssignmentUserNotFound,
+    ):
+        raise AuthHttpError(
+            404, "about:blank", "Nie znaleziono zasobu", "Zasób nie istnieje."
+        ) from None
+    except AssignmentScheduleStateConflict:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:schedule-state-conflict",
+            "Grafik nie pozwala na tę operację",
+            "Przydziały można tworzyć tylko w grafiku closed.",
+        ) from None
+    except AssignmentUserIneligible:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:assignment-user-ineligible",
+            "Nie można przypisać użytkownika",
+            "Użytkownik nie może otrzymać przydziału.",
+        ) from None
+    except AssignmentCapacityExceeded:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:assignment-capacity-exceeded",
+            "Brak wolnego miejsca",
+            "Wymagana obsada została osiągnięta.",
+        ) from None
+    except AssignmentAlreadyExists:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:assignment-already-exists",
+            "Przydział już istnieje",
+            "Pracownik jest już przypisany do tej zmiany.",
+        ) from None
+    except AssignmentOverlap:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:assignment-overlap",
+            "Kolizja przydziałów",
+            "Pracownik ma nakładający się przydział.",
+        ) from None
+    except AssignmentWarningRequired:
+        raise AuthHttpError(
+            409,
+            "urn:dreamplanner:problem:assignment-warning-required",
+            "Wymagane potwierdzenie",
+            "Przydział wymaga potwierdzenia ostrzeżenia.",
+        ) from None
+
+    response.headers["Location"] = (
+        f"/api/v1/schedules/{parsed_schedule_id}/shift-assignments/{result.id}"
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return result
