@@ -144,16 +144,22 @@ both the reference SQL and an initial Alembic migration to the same database.
 | Principal | Access |
 | --- | --- |
 | DBA | Existing Azure ownership; Key Vault Secrets Officer on the project vault; SQL administrator |
-| Backend developer | Reader on the project resource group; read only `database-url-app` and `database-url-migration`; Managed Identity Operator on the backend identity |
+| Backend developer | Contributor, Reader and Container Registry Contributor and Data Access Configuration Administrator on the project resource group; AcrPush, Repository Writer and Catalog Lister for registries in the group; read only `database-url-app` and `database-url-migration`; Managed Identity Operator on the backend identity |
 | Frontend developer | Reader on the project resource group; no database secrets or SQL login |
-| `id-dreamplanner-backend` | Read only `database-url-app` |
+| `id-dreamplanner-backend` | Read only `database-url-app`; AcrPull, Repository Reader and Catalog Lister for registries in the group |
 
 Guest users must accept their tenant invitation. Invitations are created once
 outside Terraform; the guest object IDs are inputs to the role assignments.
 The project tenant is `d6e86b7e-9310-46e8-9e3c-b44f06df413f`.
-Reader enables inspection, not application deployment. Assign deployment roles on
-the individual hosting resources once DevOps creates them; a frontend developer
-must not be able to edit the backend host and inherit its database identity.
+The backend developer can provision hosting, configure networking and deploy the
+application using Contributor at resource-group scope. This also permits changing
+other infrastructure in the group, including PostgreSQL; it does not grant IAM
+role assignment administration. Contributor covers ACR Tasks management.
+Image roles support both RBAC-only and ABAC-enabled registries, including registries
+created later in this group. Attach `id-dreamplanner-backend` to the host and select
+it for registry authentication; its pull roles and runtime database secret access
+are already assigned. New identities require separate access assignments by an owner.
+Frontend access remains Reader; assign deployment permissions only on its hosting.
 
 The backend developer can retrieve the two named secrets after accepting the
 invitation and signing in to the project tenant. Secret-scoped permissions do not

@@ -123,12 +123,17 @@ zespołu w `terraform/team.tf`. Parametry projektu:
 | Sekret migracji | `database-url-migration` |
 | Tożsamość backendu | `id-dreamplanner-backend` |
 
-Backendowiec (`merchwadawid@fastmail.com`) otrzymuje odczyt zasobów
-grupy projektu oraz dwóch sekretów: aplikacji i migracji. Frontendowiec
+Backendowiec (`merchwadawid@fastmail.com`) ma Contributor w grupie projektu,
+może tworzyć hosting backendu i zarządzać jego siecią oraz ACR. Dodatkowe role
+pozwalają wysyłać, pobierać i listować obrazy w rejestrach grupy (RBAC/ABAC).
+Ma też odczyt dwóch sekretów: aplikacji i migracji. Contributor obejmuje również
+zarządzanie pozostałymi zasobami grupy, lecz nie nadawanie ról IAM. Frontendowiec
 (`wrx87738@student.wroclaw.merito.pl`) otrzymuje odczyt zasobów bez dostępu do
 sekretów bazy. Konta gości wymagają zaakceptowania zaproszenia do katalogu.
-Uprawnienia do wdrażania aplikacji należy nadać na konkretnych zasobach hostingu,
-gdy powstaną, bez udostępniania frontendowi zarządzania hostem backendu.
+Uprawnienia frontendu do wdrażania należy nadać na jego konkretnych zasobach
+hostingu, bez udostępniania mu zarządzania hostem backendu. Tożsamość
+`id-dreamplanner-backend` ma role pobierania obrazów w rejestrach grupy; należy
+przypiąć ją do hosta i wskazać jako tożsamość uwierzytelniania rejestru.
 
 Terraform nie tworzy tabel aplikacyjnych ani kont SQL poza administratorem.
 DBA uruchamia `database/bootstrap.py` po wdrożeniu, aby utworzyć konta SQL
