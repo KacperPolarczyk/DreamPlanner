@@ -145,7 +145,7 @@ both the reference SQL and an initial Alembic migration to the same database.
 | --- | --- |
 | DBA | Existing Azure ownership; Key Vault Secrets Officer on the project vault; SQL administrator |
 | Backend developer | Contributor, Reader and Container Registry Contributor and Data Access Configuration Administrator on the project resource group; AcrPush, Repository Writer and Catalog Lister for registries in the group; read only `database-url-app` and `database-url-migration`; Managed Identity Operator on the backend identity |
-| Frontend developer | Reader on the project resource group; no database secrets or SQL login |
+| Frontend developer | Reader on the project resource group; Contributor on the frontend web app; Reader and AcrPush on ACR; no database secrets or SQL login |
 | `id-dreamplanner-backend` | Read only `database-url-app`; AcrPull, Repository Reader and Catalog Lister for registries in the group |
 
 Guest users must accept their tenant invitation. Invitations are created once
@@ -159,7 +159,8 @@ Image roles support both RBAC-only and ABAC-enabled registries, including regist
 created later in this group. Attach `id-dreamplanner-backend` to the host and select
 it for registry authentication; its pull roles and runtime database secret access
 are already assigned. New identities require separate access assignments by an owner.
-Frontend access remains Reader; assign deployment permissions only on its hosting.
+Frontend hosting and deployment roles are managed in `frontend.tf`; see
+[frontend/AZURE.md](../frontend/AZURE.md) for the OIDC workflow and handoff.
 
 The backend developer can retrieve the two named secrets after accepting the
 invitation and signing in to the project tenant. Secret-scoped permissions do not
@@ -218,3 +219,13 @@ Project: DreamPlanner
 Role: Project Manager / DevOps
 
 Infrastructure managed using Terraform.
+
+## Frontend hosting
+
+`frontend.tf` reuses the existing Linux B1 service plan and Basic ACR through data
+sources. It provisions a system-assigned identity for image pulls and a separate
+GitHub OIDC identity restricted to `main`. The frontend developer has Contributor
+on the frontend app only. The workflow owns the deployed image tag.
+
+The backend subnet delegation in `subnets.tf` matches the existing App Service
+VNet integration; removing it would disrupt the backend.

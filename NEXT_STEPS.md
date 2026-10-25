@@ -1,8 +1,9 @@
 # Uruchomienie aplikacji w Azure
 
 Baza PostgreSQL, Private Endpoint, Key Vault i konta SQL są przygotowane.
-Hosting aplikacji i tabele aplikacyjne wymagają jeszcze wdrożenia. Połączenie
-z bazą sprawdzono z komputera DBA; test z hosta backendu pozostaje do wykonania.
+Backend działa w Azure; migracje wykonano do rewizji 20261023_02.
+Endpoint gotowości potwierdza połączenie backendu z bazą.
+Hosting frontendu i role wdrożeniowe opisano w [frontend/AZURE.md](frontend/AZURE.md).
 
 ## DevOps — Kacper
 
@@ -16,7 +17,7 @@ z bazą sprawdzono z komputera DBA; test z hosta backendu pozostaje do wykonania
    do zmiennej `DATABASE_URL`. Samo przypięcie tożsamości nie ustawia zmiennej.
 4. Przygotować uruchamianie migracji z dostępem do tej samej sieci i sekretu
    `database-url-migration`. Tożsamość aplikacji ma dostęp tylko do sekretu aplikacji.
-5. Nadać frontendowcowi uprawnienia do jego hostingu. Backendowiec ma już
+5. Uprawnienia frontendowca do jego hostingu i ACR definiuje `terraform/frontend.tf`. Backendowiec ma już
    Contributor w grupie projektu i może samodzielnie tworzyć zasoby backendu.
 6. Przekazać zespołowi adresy aplikacji HTTPS i sposób wdrażania; dopasować
    routing oraz reguły sieciowe do wybranego hostingu i sposobu wywoływania API.
