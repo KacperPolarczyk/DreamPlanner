@@ -56,7 +56,7 @@ resource "azurerm_federated_identity_credential" "frontend_main" {
   parent_id           = azurerm_user_assigned_identity.frontend_ci.id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = "https://token.actions.githubusercontent.com"
-  subject             = "repo:KacperPolarczyk/DreamPlanner:ref:refs/heads/main"
+  subject             = "repo:KacperPolarczyk@95491287/DreamPlanner@1402865452:ref:refs/heads/main"
 }
 
 resource "azurerm_role_assignment" "frontend_developer_host" {

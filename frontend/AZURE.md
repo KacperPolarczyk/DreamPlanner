@@ -25,7 +25,7 @@ ról wszystkich korzystających z niego tożsamości, również backendu.
 
 Tożsamość `id-dreamplanner-frontend-github` ma AcrPush i Reader wyłącznie na ACR
 oraz Website Contributor wyłącznie na aplikacji frontendu. Zaufanie OIDC obejmuje:
-`repo:KacperPolarczyk/DreamPlanner:ref:refs/heads/main`.
+`repo:KacperPolarczyk@95491287/DreamPlanner@1402865452:ref:refs/heads/main`.
 
 Workflow `.github/workflows/frontend-azure.yml` działa po zmianie frontendu na
 `main` lub ręcznym uruchomieniu dla `main`. Gałęzie PR nie mogą wdrażać aplikacji.
