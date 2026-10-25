@@ -1,0 +1,42 @@
+name: dreamplanner-stage1632b
+
+services:
+  postgres:
+    image: postgres:16.15-bookworm
+    environment:
+      POSTGRES_DB: dreamplanner_stage1632b
+      POSTGRES_USER: dreamplanner_isolated_admin
+      POSTGRES_PASSWORD: ${ISOLATED_ADMIN_PASSWORD:?Set in .env.isolated}
+      ISOLATED_APP_PASSWORD: ${ISOLATED_APP_PASSWORD:?Set in .env.isolated}
+      ISOLATED_MIGRATION_PASSWORD: ${ISOLATED_MIGRATION_PASSWORD:?Set in .env.isolated}
+      ISOLATED_TEST_APP_PASSWORD: ${ISOLATED_TEST_APP_PASSWORD:?Set in .env.isolated}
+      ISOLATED_TEST_MIGRATION_PASSWORD: ${ISOLATED_TEST_MIGRATION_PASSWORD:?Set in .env.isolated}
+      POSTGRES_TEST_DB: dreamplanner_test_publication_races_134
+    ports:
+      - "127.0.0.1:${ISOLATED_POSTGRES_HOST_PORT:-55432}:5432"
+    volumes:
+      - isolated_postgres_data:/var/lib/postgresql/data
+      - ./docker/init-isolated-roles.sh:/docker-entrypoint-initdb.d/10-init-isolated-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://dreamplanner_isolated_app:${ISOLATED_APP_PASSWORD:?Set in .env.isolated}@postgres:5432/dreamplanner_stage1632b
+      JWT_SIGNING_KEY_BASE64: ${ISOLATED_JWT_SIGNING_KEY_BASE64:?Set in .env.isolated}
+      JWT_CURRENT_KID: isolated-local
+      JWT_ISSUER: dreamplanner-isolated-local
+      JWT_AUDIENCE: dreamplanner-isolated-local-api
+    ports:
+      - "127.0.0.1:${ISOLATED_APP_HOST_PORT:-8001}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  isolated_postgres_data:
