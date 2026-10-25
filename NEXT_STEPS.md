@@ -1,12 +1,13 @@
 # Uruchomienie aplikacji w Azure
 
 Baza PostgreSQL, Private Endpoint, Key Vault i konta SQL są przygotowane.
-Hosting aplikacji i tabele aplikacyjne wymagają jeszcze wdrożenia. Połączenie
-z bazą sprawdzono z komputera DBA; test z hosta backendu pozostaje do wykonania.
+Backend działa w Azure; migracje wykonano do rewizji 20261023_02.
+Endpoint gotowości potwierdza połączenie backendu z bazą.
+Hosting frontendu i role wdrożeniowe opisano w [frontend/AZURE.md](frontend/AZURE.md).
 
 ## DevOps — Kacper
 
-1. Utworzyć hosting backendu i frontendu, zapisując konfigurację w Terraform.
+1. Uzgodnić z backendowcem hosting backendu i utworzyć hosting frontendu; zapisać konfigurację w Terraform.
 2. Zapewnić backendowi połączenie wychodzące przez `snet-backend` w
    `dreamplanner-vnet` oraz prywatny DNS. FQDN bazy powinien rozwiązywać się
    na `10.13.3.4`, a TCP 5432 musi być dostępny. Dla App Service potrzebna
@@ -16,14 +17,20 @@ z bazą sprawdzono z komputera DBA; test z hosta backendu pozostaje do wykonania
    do zmiennej `DATABASE_URL`. Samo przypięcie tożsamości nie ustawia zmiennej.
 4. Przygotować uruchamianie migracji z dostępem do tej samej sieci i sekretu
    `database-url-migration`. Tożsamość aplikacji ma dostęp tylko do sekretu aplikacji.
-5. Nadać backendowcowi uprawnienia do wdrażania jego aplikacji, a frontendowcowi
-   do jego hostingu. Obecne role nie pozwalają im samodzielnie tworzyć serwerów.
+5. Uprawnienia frontendowca do jego hostingu i ACR definiuje `terraform/frontend.tf`. Backendowiec ma już
+   Contributor w grupie projektu i może samodzielnie tworzyć zasoby backendu.
 6. Przekazać zespołowi adresy aplikacji HTTPS i sposób wdrażania; dopasować
    routing oraz reguły sieciowe do wybranego hostingu i sposobu wywoływania API.
 
 ## Backend — Dawid (`merchwadawid@fastmail.com`)
 
 1. Zaakceptować zaproszenie do Azure przekazane przez Macieja.
+   Backend ma Contributor w `rg-dreamplanner-dev`: może tworzyć ACR, hosting,
+   konfigurować sieć i wdrażać aplikację. Ma również push/pull i listowanie
+   repozytoriów ACR w trybie RBAC oraz ABAC. Zakres obejmuje całą grupę projektu.
+   Przy pobieraniu obrazu przez hosting użyć `id-dreamplanner-backend`, która
+   ma już role odczytu obrazów. Przypiąć ją do hosta i wskazać w konfiguracji
+   uwierzytelniania rejestru. Contributor nie nadaje prawa do przypisywania ról IAM.
 2. Przygotować migracje Alembic na podstawie `database/schema.sql` i modelu danych.
    Uruchamiać je kontem `dreamplanner_migrator`, korzystając z
    `database-url-migration` jako `MIGRATION_DATABASE_URL`.

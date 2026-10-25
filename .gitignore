@@ -15,7 +15,29 @@
 .pgpass
 .pg_service.conf
 
-# Python tooling
+# Python
 __pycache__/
 *.py[cod]
 .venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.egg-info/
+dist/
+build/
+
+# Local Markdown documentation
+/*.md
+!/README.md
+!/NEXT_STEPS.md
+
+/backend/*.md
+!/backend/README.md
+
+# Local backend reference directories
+/backend/.*-reference/

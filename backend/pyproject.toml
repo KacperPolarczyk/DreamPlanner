@@ -1,0 +1,41 @@
+[project]
+name = "dreamplanner-backend"
+version = "0.1.0"
+description = "DreamPlanner API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic>=1.14,<2",
+    "argon2-cffi>=23,<26",
+    "email-validator>=2,<3",
+    "fastapi>=0.115,<1",
+    "psycopg[binary]>=3,<4",
+    "pydantic>=2,<3",
+    "pydantic-settings>=2,<3",
+    "pyjwt>=2.10,<3",
+    "slowapi>=0.1.9,<1",
+    "sqlalchemy>=2,<3",
+    "uvicorn>=0.30,<1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27,<1",
+    "pytest>=8,<10",
+    "ruff>=0.9,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["integration: requires a local PostgreSQL instance"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = [".codex-reference"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
