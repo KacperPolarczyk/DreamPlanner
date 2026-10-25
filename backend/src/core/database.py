@@ -25,7 +25,11 @@ def get_engine() -> Engine:
     database_url = Settings().database_url
     if not database_url:
         raise ValueError("DATABASE_URL must be configured for database access")
-    return create_engine(normalize_postgresql_url(database_url), hide_parameters=True)
+    return create_engine(
+        normalize_postgresql_url(database_url),
+        hide_parameters=True,
+        pool_pre_ping=True,
+    )
 
 
 @lru_cache

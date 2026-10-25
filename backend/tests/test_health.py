@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from sqlalchemy.pool import NullPool
 
 from src.main import app
 
@@ -72,7 +73,7 @@ def test_readiness_checks_database_with_bounded_timeouts(monkeypatch) -> None:
     assert seen["url"].query["sslmode"] == "verify-full"
     assert seen["url"].query["sslrootcert"] == "/etc/root.pem"
     assert seen["url"].query["application_name"] == "readiness"
-    assert seen["options"]["hide_parameters"] is True
+    assert seen["options"] == {"poolclass": NullPool, "hide_parameters": True}
 
 
 def test_readiness_failure_is_redacted_and_liveness_survives(monkeypatch) -> None:

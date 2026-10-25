@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import QueuePool
 
 from src.core import database
 from src.core.config import Settings
@@ -52,6 +53,8 @@ def test_engine_is_lazy_and_session_factory_disables_implicit_writes(
         assert factory.kw["autoflush"] is False
         assert factory.kw["autocommit"] is False
         assert factory.kw["bind"] is database.get_engine()
+        assert isinstance(database.get_engine().pool, QueuePool)
+        assert database.get_engine().pool._pre_ping is True
     finally:
         database.get_session_factory.cache_clear()
         database.get_engine().dispose()
@@ -117,7 +120,7 @@ def test_engine_normalizes_terraform_url_without_losing_tls(
         assert url.drivername == "postgresql+psycopg"
         assert url.query["sslmode"] == "verify-full"
         assert url.query["sslrootcert"] == "/etc/root.pem"
-        assert seen["options"] == {"hide_parameters": True}
+        assert seen["options"] == {"hide_parameters": True, "pool_pre_ping": True}
     finally:
         engine.dispose()
         database.get_engine.cache_clear()
