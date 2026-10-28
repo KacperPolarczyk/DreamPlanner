@@ -7,9 +7,10 @@ import { validateEmail, validatePassword } from './validation';
 interface LoginFormProps {
   onLogin: (token: string) => void;
   notice?: string | null;
+  onShowActivation?: () => void;
 }
 
-export default function LoginForm({ onLogin, notice }: LoginFormProps) {
+export default function LoginForm({ onLogin, notice, onShowActivation }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
@@ -74,6 +75,19 @@ export default function LoginForm({ onLogin, notice }: LoginFormProps) {
       </button>
 
       {apiError && <div style={{ ...ui.banner, ...ui.bannerError }}>{apiError}</div>}
+
+      {onShowActivation && (
+        <p style={{ ...ui.muted, marginBottom: 0, marginTop: 16 }}>
+          Masz kod od administratora?{' '}
+          <button
+            type="button"
+            onClick={onShowActivation}
+            style={{ border: 'none', background: 'none', color: '#2563eb', cursor: 'pointer', padding: 0, fontSize: 14 }}
+          >
+            Aktywuj konto
+          </button>
+        </p>
+      )}
     </form>
   );
 }

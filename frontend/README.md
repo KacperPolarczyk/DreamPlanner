@@ -1,6 +1,6 @@
 # DreamPlanner – Frontend
 
-Aplikacja webowa DreamPlanner do zarządzania stanowiskami pracy. Frontend łączy się z REST API backendu (FastAPI) i jest wdrożony w chmurze Microsoft Azure.
+Aplikacja webowa DreamPlanner do planowania miesięcznych grafików pracy: od zapotrzebowania na pracowników, przez zbieranie dyspozycyjności, po obsadzenie zmian i publikację grafiku. Frontend łączy się z REST API backendu (FastAPI) i jest wdrożony w chmurze Microsoft Azure.
 
 **Wersja produkcyjna:** https://app-dreamplanner-frontend-77076.azurewebsites.net
 
@@ -30,12 +30,24 @@ flowchart LR
 ```
 frontend/
 ├── src/
-│   ├── App.tsx            # główny komponent: status API, logowanie / ekran stanowisk
-│   ├── LoginForm.tsx      # formularz logowania
-│   ├── PositionsPage.tsx  # lista stanowisk i operacje CRUD
-│   ├── api.ts             # komunikacja z REST API (token JWT, obsługa błędów)
-│   ├── validation.ts      # walidacja formularzy po stronie klienta
-│   └── styles.ts          # wspólne style komponentów
+│   ├── App.tsx                  # logowanie, profil użytkownika, zakładki zależne od roli
+│   ├── LoginForm.tsx            # formularz logowania
+│   ├── ActivationForm.tsx       # ustawienie hasła kodem aktywacyjnym / reaktywacji
+│   ├── UsersPage.tsx            # admin: konta, role, kody aktywacyjne
+│   ├── PositionsPage.tsx        # admin: CRUD stanowisk (manager: podgląd)
+│   ├── SchedulesPage.tsx        # lista grafików, tworzenie i usuwanie szkicu
+│   ├── ScheduleDetails.tsx      # szczegóły grafiku: etapy, zapotrzebowanie, obsada
+│   ├── RequirementForm.tsx      # formularz zapotrzebowania (dodawanie i edycja)
+│   ├── AvailabilityOverview.tsx # manager: podgląd zgłoszeń dyspozycyjności
+│   ├── MyAvailabilityPage.tsx   # pracownik: zgłaszanie dyspozycyjności
+│   ├── MyShiftsPage.tsx         # pracownik: zmiany z opublikowanych grafików
+│   ├── api.ts                   # komunikacja z REST API (typy, token JWT, obsługa błędów)
+│   ├── useLoader.ts             # hook: pobieranie danych ze stanem ładowania i błędu
+│   ├── useApiAction.ts          # hook: operacje zapisu (zapisywanie / sukces / błąd)
+│   ├── components.tsx          # wspólne elementy UI (komunikaty, spinner, zakładki)
+│   ├── format.ts                # formatowanie dat, godzin, nazw statusów i ról
+│   ├── validation.ts            # walidacja formularzy po stronie klienta
+│   └── styles.ts                # wspólne style komponentów
 ├── Dockerfile
 ├── .env.local             # lokalna konfiguracja (NIE trafia do repozytorium)
 └── package.json
@@ -87,21 +99,74 @@ Zmienne z prefiksem `VITE_` są wbudowywane w kod podczas `npm run build`, więc
 
 Wszystkie ścieżki mają prefiks `/api/v1`. Endpointy oznaczone 🔒 wymagają nagłówka `Authorization: Bearer <token>`. Pełna dokumentacja API jest dostępna w Swaggerze backendu pod adresem `/docs`.
 
-| Metoda | Ścieżka | Opis | Funkcja w `api.ts` |
-|---|---|---|---|
-| `POST` | `/auth/sessions` | logowanie, zwraca token JWT (`access_token`, `expires_in`) | `login()` |
-| `DELETE` 🔒 | `/auth/sessions/current` | wylogowanie (zakończenie bieżącej sesji) | `logout()` |
-| `GET` 🔒 | `/positions?limit=100&sort=name` | lista stanowisk (aktywne i nieaktywne) | `listPositions()` |
-| `POST` 🔒 | `/positions` | dodanie stanowiska | `createPosition()` |
-| `PATCH` 🔒 | `/positions/{id}` | zmiana nazwy stanowiska | `renamePosition()` |
-| `POST` 🔒 | `/positions/{id}/deactivation` | dezaktywacja stanowiska | `deactivatePosition()` |
-| `POST` 🔒 | `/positions/{id}/reactivation` | ponowna aktywacja stanowiska | `reactivatePosition()` |
+### Logowanie i konto
 
-Operacje na stanowiskach wymagają roli **admin** lub **manager**. Inna rola dostaje odpowiedź 403.
+| Metoda | Ścieżka | Opis | Rola | Funkcja w `api.ts` |
+|---|---|---|---|---|
+| `POST` | `/auth/sessions` | logowanie, zwraca token JWT | – | `login()` |
+| `DELETE` 🔒 | `/auth/sessions/current` | wylogowanie | każda | `logout()` |
+| `POST` | `/auth/activations` | ustawienie hasła kodem aktywacyjnym | – | `activateAccount()` |
+| `POST` | `/auth/reactivations` | ustawienie hasła kodem reaktywacji | – | `activateAccount()` |
+| `GET` 🔒 | `/users/me` | profil zalogowanego użytkownika (rola) | każda | `getCurrentUser()` |
+
+### Użytkownicy i pracownicy
+
+| Metoda | Ścieżka | Opis | Rola | Funkcja w `api.ts` |
+|---|---|---|---|---|
+| `GET` 🔒 | `/users` | lista kont | admin | `listUsers()` |
+| `POST` 🔒 | `/users` | nowe konto (zwraca kod aktywacyjny) | admin | `createUser()` |
+| `PUT` 🔒 | `/users/{id}/role` | zmiana roli | admin | `changeUserRole()` |
+| `POST` 🔒 | `/users/{id}/deactivation` | dezaktywacja konta | admin | `deactivateUser()` |
+| `POST` 🔒 | `/users/{id}/reactivation` | kod reaktywacji konta | admin | `reactivateUser()` |
+| `POST` 🔒 | `/users/{id}/activation-tokens` | nowy kod aktywacyjny | admin | `reissueActivation()` |
+| `GET` 🔒 | `/employees` | aktywni pracownicy (do obsady zmian) | manager, admin | `listEmployees()` |
+
+### Stanowiska
+
+| Metoda | Ścieżka | Opis | Rola | Funkcja w `api.ts` |
+|---|---|---|---|---|
+| `GET` 🔒 | `/positions?limit=100&sort=name` | lista stanowisk | admin, manager | `listPositions()` |
+| `POST` 🔒 | `/positions` | dodanie stanowiska | admin | `createPosition()` |
+| `PATCH` 🔒 | `/positions/{id}` | zmiana nazwy | admin | `renamePosition()` |
+| `POST` 🔒 | `/positions/{id}/deactivation` | dezaktywacja | admin | `deactivatePosition()` |
+| `POST` 🔒 | `/positions/{id}/reactivation` | ponowna aktywacja | admin | `reactivatePosition()` |
+
+### Grafiki i zapotrzebowanie
+
+| Metoda | Ścieżka | Opis | Rola | Funkcja w `api.ts` |
+|---|---|---|---|---|
+| `GET` 🔒 | `/schedules` | lista grafików | admin, manager | `listSchedules()` |
+| `POST` 🔒 | `/schedules` | nowy grafik miesięczny (`draft`) | manager | `createSchedule()` |
+| `GET` 🔒 | `/schedules/{id}` | szczegóły grafiku | admin, manager | `getSchedule()` |
+| `DELETE` 🔒 | `/schedules/{id}` | usunięcie pustego szkicu | manager | `deleteSchedule()` |
+| `POST` 🔒 | `/schedules/{id}/collection-opening` | `draft` → `collecting` | manager | `changeScheduleStatus()` |
+| `POST` 🔒 | `/schedules/{id}/collection-closing` | `collecting` → `collection_closed` | manager | `changeScheduleStatus()` |
+| `POST` 🔒 | `/schedules/{id}/closing` | `collection_closed` → `closed` | manager | `changeScheduleStatus()` |
+| `POST` 🔒 | `/schedules/{id}/publication` | `closed` → `published` (nieodwracalne) | manager | `changeScheduleStatus()` |
+| `GET` 🔒 | `/schedules/{id}/shift-requirements` | zapotrzebowanie grafiku | admin, manager | `listShiftRequirements()` |
+| `POST` 🔒 | `/schedules/{id}/shift-requirements` | dodanie zapotrzebowania (tylko `draft`) | manager | `createShiftRequirement()` |
+| `PATCH` 🔒 | `/schedules/{id}/shift-requirements/{rid}` | edycja zapotrzebowania (tylko `draft`) | manager | `updateShiftRequirement()` |
+| `DELETE` 🔒 | `/schedules/{id}/shift-requirements/{rid}` | usunięcie zapotrzebowania (tylko `draft`) | manager | `deleteShiftRequirement()` |
+
+### Obsada i dyspozycyjność
+
+| Metoda | Ścieżka | Opis | Rola | Funkcja w `api.ts` |
+|---|---|---|---|---|
+| `GET` 🔒 | `/schedules/{id}/shift-assignments` | przydziały pracowników do zmian | admin, manager | `listAssignments()` |
+| `POST` 🔒 | `/schedules/{id}/shift-assignments` | przypisanie pracownika (tylko `closed`) | manager | `createAssignment()` |
+| `DELETE` 🔒 | `/schedules/{id}/shift-assignments/{aid}` | usunięcie przydziału (tylko `closed`) | manager | `deleteAssignment()` |
+| `GET` 🔒 | `/schedules/{id}/availability-submissions` | zgłoszenia dyspozycyjności (pracownik: tylko własne) | każda | `listAvailability()` |
+| `GET` 🔒 | `/schedules/{id}/availability-submissions/{sid}` | zgłoszenie z wpisami | każda | `getAvailability()` |
+| `POST` 🔒 | `/schedules/{id}/availability-submissions` | nowe zgłoszenie (tylko `collecting`) | pracownik | `createAvailability()` |
+| `PATCH` 🔒 | `/schedules/{id}/availability-submissions/{sid}` | edycja / przesłanie zgłoszenia | pracownik | `updateAvailability()` |
+| `DELETE` 🔒 | `/schedules/{id}/availability-submissions/{sid}` | usunięcie wersji roboczej | pracownik | `deleteAvailability()` |
+| `GET` 🔒 | `/me/shifts` | własne zmiany z opublikowanych grafików | pracownik | `listMyShifts()` |
+
+Daty mają format `YYYY-MM-DD`, a godziny `HH:MM:SS` (czas lokalny `Europe/Warsaw`). Formularze używają pól `HH:MM`, a `api.ts` dopisuje sekundy.
 
 ### Format odpowiedzi listy
 
-Lista jest stronicowana (domyślnie 25 wyników, maksymalnie 100):
+Listy są stronicowane (domyślnie 25 wyników, maksymalnie 100; frontend pobiera 100):
 
 ```json
 {
@@ -131,9 +196,10 @@ Backend zwraca błędy w formacie *problem details*. Frontend wyświetla użytko
 |---|---|---|
 | – | brak połączenia z serwerem (sieć lub CORS) | „Brak połączenia z serwerem (sprawdź internet lub CORS).” |
 | 401 | brak lub wygaśnięcie tokenu | komunikat „Sesja wygasła”, powrót do logowania |
-| 403 | brak uprawnień (rola inna niż admin/manager) | komunikat z API |
+| 403 | brak uprawnień dla roli użytkownika | komunikat z API |
 | 404 | nie znaleziono zasobu | komunikat z API |
-| 409 | stanowisko o tej nazwie już istnieje | komunikat z API przy formularzu |
+| 409 | konflikt ze stanem danych, np. duplikat nazwy, grafik dla tego miesiąca już istnieje, operacja niedozwolona w obecnym statusie grafiku, pełna obsada, nakładające się zmiany pracownika | komunikat z API |
+| 409 `assignment-warning-required` | pracownik nie zgłosił dostępności w godzinach zmiany | okno potwierdzenia; po akceptacji ponowne wysłanie z `warning_acknowledged: true` |
 | 422 | nieprawidłowe dane żądania | „Nieprawidłowe dane (pole: …)” z nazwą pola z `errors[].location` |
 | 429 | zbyt wiele prób | prośba o ponowienie za chwilę |
 | 500 / 503 | błąd serwera / brak konfiguracji JWT | komunikat z API zamiast pustej strony |
@@ -145,9 +211,10 @@ Jeśli odpowiedź nie zawiera pola `detail`, frontend pokazuje domyślny polski 
 1. Użytkownik wpisuje e-mail i hasło. Frontend najpierw sprawdza poprawność pól.
 2. Frontend wysyła dane do `POST /api/v1/auth/sessions`.
 3. Backend zwraca token JWT (`access_token`) wraz z czasem ważności (`expires_in`, obecnie 10 minut).
-4. Frontend przechowuje token na czas sesji i dołącza go do każdego zapytania w nagłówku `Authorization: Bearer`.
-5. Gdy token wygaśnie (odpowiedź 401), użytkownik widzi komunikat o wygaśnięciu sesji i loguje się ponownie.
-6. Przycisk „Wyloguj” wysyła `DELETE /api/v1/auth/sessions/current` i usuwa token z aplikacji.
+4. Frontend pobiera profil (`GET /api/v1/users/me`) i na podstawie roli pokazuje odpowiednie zakładki.
+5. Frontend przechowuje token na czas sesji i dołącza go do każdego zapytania w nagłówku `Authorization: Bearer`.
+6. Gdy token wygaśnie (odpowiedź 401), użytkownik widzi komunikat o wygaśnięciu sesji i loguje się ponownie.
+7. Przycisk „Wyloguj” wysyła `DELETE /api/v1/auth/sessions/current` i usuwa token z aplikacji.
 
 ```mermaid
 sequenceDiagram
@@ -159,15 +226,15 @@ sequenceDiagram
     F->>F: walidacja pól
     F->>B: POST /api/v1/auth/sessions
     B-->>F: 200 + token JWT
-    F->>B: GET /api/v1/positions (Bearer token)
-    B-->>F: 200 { items, total }
-    F-->>U: tabela stanowisk
+    F->>B: GET /api/v1/users/me (Bearer token)
+    B-->>F: 200 { full_name, role }
+    F-->>U: zakładki dla roli (admin / manager / pracownik)
 
-    U->>F: dodaj / zmień nazwę / dezaktywuj
+    U->>F: operacja (np. dodanie zapotrzebowania)
     F->>B: POST / PATCH (Bearer token)
     alt sukces
         B-->>F: 2xx
-        F->>B: GET /api/v1/positions (odświeżenie)
+        F->>B: GET (odświeżenie danych ekranu)
         F-->>U: zielony komunikat + aktualna lista
     else błąd (np. 409)
         B-->>F: 4xx + detail
@@ -180,13 +247,50 @@ sequenceDiagram
     F-->>U: ekran logowania
 ```
 
+## Role i ekrany
+
+| Rola | Zakładki | Co może zrobić |
+|---|---|---|
+| **Administrator** | Użytkownicy, Stanowiska, Grafiki (podgląd) | zakłada konta managerów i pracowników, zmienia role, dezaktywuje konta, generuje kody aktywacyjne; zarządza stanowiskami; przegląda grafiki |
+| **Manager** | Grafiki, Stanowiska (podgląd) | tworzy grafiki, definiuje zapotrzebowanie, prowadzi grafik przez kolejne etapy, przegląda dyspozycyjność, przypisuje pracowników, publikuje grafik |
+| **Pracownik** | Moje zmiany, Moja dyspozycyjność | zgłasza dostępność w dniach i godzinach miesiąca, widzi swoje zmiany po publikacji |
+
+Nowy użytkownik dostaje od administratora jednorazowy kod i na ekranie logowania („Aktywuj konto”) ustawia własne hasło.
+
+## Cykl życia grafiku
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft: manager tworzy grafik na miesiąc
+    draft --> collecting: otwarcie zbierania dyspozycyjności
+    collecting --> collection_closed: zamknięcie zbierania
+    collection_closed --> closed: przejście do obsadzania
+    closed --> published: publikacja (nieodwracalna)
+    published --> [*]
+
+    note right of draft: manager dodaje, edytuje i usuwa zapotrzebowanie
+    note right of collecting: pracownicy zgłaszają dyspozycyjność
+    note right of closed: manager przypisuje pracowników do zmian
+    note right of published: pracownicy widzą swoje zmiany
+```
+
+| Etap (`status`) | W interfejsie | Dostępne operacje |
+|---|---|---|
+| `draft` | Szkic | dodawanie, edycja i usuwanie zapotrzebowania; usunięcie pustego grafiku |
+| `collecting` | Zbieranie dyspozycyjności | pracownicy zapisują wersję roboczą i przesyłają zgłoszenie |
+| `collection_closed` | Zbieranie zamknięte | manager przegląda zgłoszenia |
+| `closed` | Obsadzanie zmian | przypisywanie i usuwanie pracowników; ostrzeżenie, gdy pracownik nie zgłosił dostępności |
+| `published` | Opublikowany | tylko odczyt; zmiany widoczne w „Moje zmiany” |
+
 ## Funkcje interfejsu
 
-- **Logowanie i wylogowanie** z walidacją pól (puste pola, format e-mail).
-- **Lista stanowisk** z nazwą i statusem (aktywne / nieaktywne).
-- **Dodawanie stanowiska** z walidacją nazwy (pole nie może być puste).
-- **Zmiana nazwy**, **dezaktywacja** i **ponowna aktywacja** stanowiska.
-- **Stany interfejsu:** wskaźnik ładowania podczas zapytań, zielony komunikat po udanej operacji, czerwony komunikat z treścią błędu z API.
+- **Logowanie, wylogowanie i aktywacja konta** z walidacją pól (puste pola, format e-mail, zgodność haseł).
+- **Użytkownicy** (admin): tworzenie kont, zmiana roli, dezaktywacja i reaktywacja, kody aktywacyjne z przyciskiem kopiowania.
+- **Stanowiska** (admin): dodawanie, zmiana nazwy, dezaktywacja i ponowna aktywacja.
+- **Grafiki** (manager): tworzenie grafiku na wybrany miesiąc, pasek etapów z przyciskiem przejścia do następnego, zapotrzebowanie (stanowisko, dzień, godziny, liczba osób, notatka), tabela „Zmiany i obsada” z licznikiem obsady i przypisanymi osobami, podgląd zgłoszeń dyspozycyjności z listą osób, które jeszcze nie przesłały.
+- **Dyspozycyjność** (pracownik): wiele wpisów „dostępny / niedostępny”, wersja robocza, przesłanie, sprawdzanie nakładających się przedziałów.
+- **Moje zmiany** (pracownik): zmiany z opublikowanych grafików z wyróżnieniem dzisiejszego dnia.
+- **Stany interfejsu:** wskaźnik ładowania podczas zapytań, zielony komunikat po udanej operacji, czerwony komunikat z treścią błędu z API, potwierdzenia przed operacjami nieodwracalnymi.
 - **Status API** na górze strony (czy backend i baza działają).
 
 ## Wdrożenie (CI/CD)

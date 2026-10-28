@@ -14,11 +14,12 @@ import { validatePositionName } from './validation';
 
 interface PositionsPageProps {
   token: string;
-  onLogout: () => void;
+  /** Manager widzi stanowiska tylko do odczytu – zmieniać je może administrator. */
+  readOnly?: boolean;
   onSessionExpired: () => void;
 }
 
-export default function PositionsPage({ token, onLogout, onSessionExpired }: PositionsPageProps) {
+export default function PositionsPage({ token, readOnly = false, onSessionExpired }: PositionsPageProps) {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -126,13 +127,15 @@ export default function PositionsPage({ token, onLogout, onSessionExpired }: Pos
 
   return (
     <div>
-      <div style={ui.header}>
-        <h2>Stanowiska</h2>
-        <button type="button" onClick={onLogout} style={ui.buttonSecondary}>
-          Wyloguj
-        </button>
-      </div>
+      <h2>Stanowiska</h2>
 
+      {readOnly && (
+        <div style={{ ...ui.banner, ...ui.bannerInfo }}>
+          Podgląd stanowisk. Dodawać i zmieniać stanowiska może administrator.
+        </div>
+      )}
+
+      {!readOnly && (
       <form onSubmit={handleAdd} noValidate style={{ ...ui.card, maxWidth: 'none' }}>
         <label style={ui.label} htmlFor="new-position">
           Nowe stanowisko
@@ -152,6 +155,7 @@ export default function PositionsPage({ token, onLogout, onSessionExpired }: Pos
         </div>
         {newNameError && <div style={ui.fieldError}>{newNameError}</div>}
       </form>
+      )}
 
       {message && <div style={{ ...ui.banner, ...ui.bannerSuccess }}>{message}</div>}
       {actionError && <div style={{ ...ui.banner, ...ui.bannerError }}>{actionError}</div>}
@@ -171,7 +175,7 @@ export default function PositionsPage({ token, onLogout, onSessionExpired }: Pos
         </div>
       )}
 
-      {!loading && !listError && positions.length === 0 && <p>Brak stanowisk. Dodaj pierwsze powyżej.</p>}
+      {!loading && !listError && positions.length === 0 && <p>Brak stanowisk.{!readOnly && ' Dodaj pierwsze powyżej.'}</p>}
 
       {!loading && !listError && positions.length > 0 && (
         <table style={ui.table}>
@@ -180,7 +184,7 @@ export default function PositionsPage({ token, onLogout, onSessionExpired }: Pos
               <th style={ui.cell}>ID</th>
               <th style={ui.cell}>Nazwa</th>
               <th style={ui.cell}>Status</th>
-              <th style={ui.cell}>Akcje</th>
+              {!readOnly && <th style={ui.cell}>Akcje</th>}
             </tr>
           </thead>
           <tbody>
@@ -205,6 +209,7 @@ export default function PositionsPage({ token, onLogout, onSessionExpired }: Pos
                 <td style={{ ...ui.cell, color: position.is_active ? 'green' : '#888' }}>
                   {position.is_active ? 'Aktywne' : 'Nieaktywne'}
                 </td>
+                {!readOnly && (
                 <td style={ui.cell}>
                   <div style={ui.actions}>
                     {editingId === position.id ? (
@@ -228,6 +233,7 @@ export default function PositionsPage({ token, onLogout, onSessionExpired }: Pos
                     )}
                   </div>
                 </td>
+                )}
               </tr>
             ))}
           </tbody>
