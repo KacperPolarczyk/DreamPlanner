@@ -576,17 +576,13 @@ def test_two_parallel_deletes_return_204_then_404(schedules_api) -> None:
 
 
 @pytest.mark.parametrize("kind", ["shift_requirements", "availability_submissions"])
-def test_child_insert_wins_before_delete_refuses_to_cascade(
-    schedules_api, kind
-) -> None:
+def test_child_insert_wins_before_delete_cascades(schedules_api, kind) -> None:
     schedule_id = _add_schedule(schedules_api[3], schedules_api[4])
     response, child_result = _race_child_insert_first(schedules_api, schedule_id, kind)
     assert child_result[0] == "committed"
-    assert response.status_code == 409
+    assert response.status_code == 204
     counts = _counts(schedules_api[3], schedule_id)
-    assert counts["schedules"] == 1
-    assert counts["requirements"] == (kind == "shift_requirements")
-    assert counts["submissions"] == (kind == "availability_submissions")
+    assert counts == {"schedules": 0, "requirements": 0, "submissions": 0}
 
 
 @pytest.mark.parametrize("kind", ["shift_requirements", "availability_submissions"])
@@ -604,7 +600,7 @@ def test_delete_wins_before_child_insert_fk_rejects_orphan(schedules_api, kind) 
     }
 
 
-def test_delete_refusal_preserves_deep_cascade_children(schedules_api) -> None:
+def test_delete_cascades_deep_children(schedules_api) -> None:
     app, token, _, factory, manager_id, employee_id, position_id = schedules_api
     schedule_id = _add_schedule(factory, manager_id)
     with factory() as session:
@@ -642,16 +638,16 @@ def test_delete_refusal_preserves_deep_cascade_children(schedules_api) -> None:
         session.commit()
     with TestClient(app) as client:
         response = client.delete(f"{PATH}/{schedule_id}", headers=_headers(token))
-    assert response.status_code == 409
+    assert response.status_code == 204
     with factory() as session:
-        assert session.get(Schedule, schedule_id) is not None
+        assert session.get(Schedule, schedule_id) is None
         assert (
             session.scalar(
                 select(func.count())
                 .select_from(ShiftRequirement)
                 .where(ShiftRequirement.schedule_id == schedule_id)
             )
-            == 1
+            == 0
         )
         assert (
             session.scalar(
@@ -659,7 +655,7 @@ def test_delete_refusal_preserves_deep_cascade_children(schedules_api) -> None:
                 .select_from(AvailabilitySubmission)
                 .where(AvailabilitySubmission.schedule_id == schedule_id)
             )
-            == 1
+            == 0
         )
         assert (
             session.scalar(
@@ -667,7 +663,7 @@ def test_delete_refusal_preserves_deep_cascade_children(schedules_api) -> None:
                 .select_from(ShiftAssignment)
                 .where(ShiftAssignment.shift_requirement_id == requirement_id)
             )
-            == 1
+            == 0
         )
         assert (
             session.scalar(
@@ -675,7 +671,7 @@ def test_delete_refusal_preserves_deep_cascade_children(schedules_api) -> None:
                 .select_from(AvailabilityEntry)
                 .where(AvailabilityEntry.submission_id == submission_id)
             )
-            == 1
+            == 0
         )
 
 
@@ -692,7 +688,7 @@ def test_delete_then_collection_opening_returns_404(schedules_api) -> None:
     assert _counts(schedules_api[3], schedule_id)["schedules"] == 0
 
 
-def test_collection_opening_then_delete_returns_409(schedules_api) -> None:
+def test_collection_opening_then_delete_returns_204(schedules_api) -> None:
     schedule_id = _add_schedule(schedules_api[3], schedules_api[4])
     opened, deleted = _held_http_pair(
         schedules_api,
@@ -701,14 +697,10 @@ def test_collection_opening_then_delete_returns_409(schedules_api) -> None:
         ("DELETE", "", None),
     )
     assert opened.status_code == 200
-    assert deleted.status_code == 409
+    assert deleted.status_code == 204
     with schedules_api[3]() as session:
         schedule = session.get(Schedule, schedule_id)
-        assert schedule is not None
-        assert schedule.status == "collecting"
-        assert schedule.collection_opened_at is not None
-        assert schedule.collection_closed_at is None
-        assert schedule.published_at is None
+        assert schedule is None
 
 
 @pytest.mark.parametrize(

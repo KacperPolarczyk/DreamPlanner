@@ -40,10 +40,6 @@ class SchedulePublicationBlocked(Exception):
         super().__init__(reason)
 
 
-class ScheduleNotEmpty(Exception):
-    """The schedule has direct or indirect dependent data."""
-
-
 class PositionNotFound(Exception):
     """The requested position does not exist."""
 
@@ -294,30 +290,18 @@ def create_schedule(
         raise
 
 
-def delete_empty_draft(session: Session, schedule_id: int) -> None:
-    """Delete a draft only after locking it and checking both direct child tables.
+def delete_schedule(session: Session, schedule_id: int) -> None:
+    """Delete a locked schedule and its FK-cascaded history atomically.
 
-    PostgreSQL's immediate child FKs take KEY SHARE on the parent, which
-    conflicts with FOR UPDATE. Under READ COMMITTED, child checks issued after
-    the lock see a competing insert that committed while this call waited.
-    Future child writers must keep their FK checks in the same transaction.
-
-    Raises:
-        ScheduleNotFound: If the row does not exist when the lock is acquired.
-        ScheduleStateConflict: If its current status is not draft.
-        ScheduleNotEmpty: If either direct child table contains a row.
+    The parent lock serializes concurrent stage changes and child inserts.
+    PostgreSQL cascades requirements, submissions, entries, and assignments
+    within the same transaction. A failed flush or commit is rolled back.
     """
     try:
         repository = ScheduleRepository(session)
         schedule = repository.get_by_id_for_update(schedule_id)
         if schedule is None:
             raise ScheduleNotFound
-        if schedule.status != "draft":
-            raise ScheduleStateConflict
-        if repository.has_shift_requirements(schedule_id):
-            raise ScheduleNotEmpty
-        if repository.has_availability_submissions(schedule_id):
-            raise ScheduleNotEmpty
         repository.delete(schedule)
         session.flush()
         session.commit()

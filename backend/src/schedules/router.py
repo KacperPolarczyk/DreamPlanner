@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 
-from src.auth.dependencies import AuthHttpError, require_manager_write, require_roles
+from src.auth.dependencies import (
+    AuthHttpError,
+    require_manager_write,
+    require_roles,
+    require_schedule_delete_write,
+)
 from src.auth.schemas import ProblemDetails, validation_problem_schema
 from src.auth.session_service import ActiveIdentity
 from src.core.database import get_session
@@ -17,6 +22,8 @@ from src.schedules.repository import ScheduleRepository, ShiftRequirementReposit
 from src.schedules.schemas import (
     CreateScheduleInput,
     CreateShiftRequirementInput,
+    EmployeeScheduleItem,
+    EmployeeScheduleListResponse,
     ScheduleListResponse,
     ScheduleResponse,
     ScheduleStatus,
@@ -27,7 +34,6 @@ from src.schedules.schemas import (
 from src.schedules.service import (
     PositionInactive,
     PositionNotFound,
-    ScheduleNotEmpty,
     ScheduleNotFound,
     SchedulePeriodConflict,
     SchedulePublicationBlocked,
@@ -40,17 +46,22 @@ from src.schedules.service import (
     close_schedule,
     create_schedule,
     create_shift_requirement,
-    delete_empty_draft,
     delete_shift_requirement,
     open_collection,
     publish_schedule,
     update_shift_requirement,
 )
+from src.schedules.service import (
+    delete_schedule as delete_schedule_record,
+)
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
+employee_router = APIRouter(prefix="/me", tags=["my-schedules"])
 SessionDependency = Annotated[Session, Depends(get_session)]
 ReadIdentity = Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))]
 ManagerIdentity = Annotated[ActiveIdentity, Depends(require_manager_write)]
+DeleteIdentity = Annotated[ActiveIdentity, Depends(require_schedule_delete_write)]
+EmployeeIdentity = Annotated[ActiveIdentity, Depends(require_roles("employee"))]
 ScheduleIdPath = Annotated[str, Path(pattern=r"^[0-9]+$", max_length=19)]
 SortField = Literal["year", "-year", "month", "-month"]
 MAX_BIGINT = 9223372036854775807
@@ -660,6 +671,77 @@ def list_schedules(
     )
 
 
+@employee_router.get(
+    "/schedules",
+    response_model=EmployeeScheduleListResponse,
+    summary="Pobierz grafiki dostępne do zgłoszenia dyspozycyjności",
+    description=(
+        "Wymaga Bearer JWT i aktywnej roli `employee`. Zwraca wyłącznie "
+        "grafiki `collecting`, bez danych innych pracowników. Kolejność: "
+        "rok i miesiąc malejąco, ID malejąco. `total` jest liczone przed paginacją."
+    ),
+    responses={
+        200: _success_response(200),
+        401: _problem_response("Invalid access token or session"),
+        403: _problem_response("Employee required"),
+        422: _problem_response("validation-error", validation=True),
+    },
+)
+def list_employee_schedules(
+    request: Request,
+    response: Response,
+    identity: EmployeeIdentity,
+    session: SessionDependency,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0, le=MAX_BIGINT)] = 0,
+) -> EmployeeScheduleListResponse:
+    """Return a bounded page of collecting schedules with minimal fields."""
+    allowed = {"limit", "offset"}
+    invalid = (set(request.query_params) - allowed) | {
+        key for key in allowed if len(request.query_params.getlist(key)) > 1
+    }
+    invalid_decimal = {
+        key
+        for key in allowed
+        if (value := request.query_params.get(key)) is not None
+        and (not value.isascii() or not value.isdecimal())
+    }
+    if invalid or invalid_decimal:
+        raise RequestValidationError(
+            [
+                {"type": "extra_forbidden", "loc": ("query", key)}
+                for key in sorted(invalid)
+            ]
+            + [
+                {"type": "int_parsing", "loc": ("query", key)}
+                for key in sorted(invalid_decimal)
+            ]
+        )
+    schedules, total = ScheduleRepository(session).list_schedules(
+        year=None,
+        month=None,
+        status="collecting",
+        limit=limit,
+        offset=offset,
+        sort=None,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return EmployeeScheduleListResponse(
+        items=[
+            EmployeeScheduleItem(
+                id=str(schedule.id),
+                year=schedule.year,
+                month=schedule.month,
+                status="collecting",
+            )
+            for schedule in schedules
+        ],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )
+
+
 @router.get(
     "/{schedule_id}",
     response_model=ScheduleResponse,
@@ -695,49 +777,34 @@ def read_schedule(
 @router.delete(
     "/{schedule_id}",
     status_code=204,
-    summary="Usuń pusty szkic grafiku",
+    summary="Usuń trwale grafik",
     description=(
-        "Wymaga Bearer JWT i aktywnej roli `manager`. Usuwa wyłącznie "
-        "pusty grafik `draft`, po zablokowaniu wiersza i sprawdzeniu "
-        "zapotrzebowania oraz zgłoszeń dyspozycyjności. Sukces nie ma "
-        "treści i zawiera `Cache-Control: no-store`."
+        "Wymaga Bearer JWT i aktywnej roli `admin` lub `manager`. "
+        "Trwale usuwa grafik w dowolnym stanie wraz z zapotrzebowaniami, "
+        "dyspozycyjnościami i przydziałami. Sukces nie ma treści "
+        "i zawiera `Cache-Control: no-store`."
     ),
     responses={
         204: _success_response(204),
         401: _problem_response("Invalid access token or session"),
-        403: _problem_response("Manager required"),
+        403: _problem_response("Admin or manager required"),
         404: _problem_response("Schedule not found"),
-        409: _problem_response("schedule-state-conflict or schedule-not-empty"),
         422: _problem_response("validation-error", validation=True),
     },
 )
 def delete_schedule(
     schedule_id: ScheduleIdPath,
     response: Response,
-    identity: ManagerIdentity,
+    identity: DeleteIdentity,
     body_is_empty: Annotated[None, Depends(_reject_nonempty_body)],
     session: SessionDependency,
 ) -> None:
-    """Delete one empty draft after its transaction commits."""
+    """Hard delete one schedule and its dependent rows."""
     try:
-        delete_empty_draft(session, _parse_schedule_id(schedule_id))
+        delete_schedule_record(session, _parse_schedule_id(schedule_id))
     except ScheduleNotFound:
         raise AuthHttpError(
             404, "about:blank", "Nie znaleziono grafiku", "Grafik nie istnieje."
-        ) from None
-    except ScheduleStateConflict:
-        raise AuthHttpError(
-            409,
-            "urn:dreamplanner:problem:schedule-state-conflict",
-            "Nie można usunąć grafiku",
-            "Usunąć można tylko grafik w stanie draft.",
-        ) from None
-    except ScheduleNotEmpty:
-        raise AuthHttpError(
-            409,
-            "urn:dreamplanner:problem:schedule-not-empty",
-            "Grafik nie jest pusty",
-            "Grafik zawiera dane powiązane i nie może zostać usunięty.",
         ) from None
     response.headers["Cache-Control"] = "no-store"
 

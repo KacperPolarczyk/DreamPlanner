@@ -185,3 +185,19 @@ def require_manager_write(
     ):
         raise AuthHttpError(403, "about:blank", "Odmowa dostępu", "Brak uprawnienia.")
     return identity
+
+
+def require_schedule_delete_write(
+    identity: Annotated[ActiveIdentity, Depends(require_roles("admin", "manager"))],
+    session: SessionDependency,
+) -> ActiveIdentity:
+    """Keep an authorized admin or manager account locked through deletion."""
+    rows = UserRepository(session).lock_users_for_share({identity.user_id})
+    if (
+        not rows
+        or rows[0][1] not in {"admin", "manager"}
+        or not rows[0][0].is_active
+        or rows[0][0].activated_at is None
+    ):
+        raise AuthHttpError(403, "about:blank", "Odmowa dostępu", "Brak uprawnienia.")
+    return identity

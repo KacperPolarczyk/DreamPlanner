@@ -29,7 +29,7 @@ flowchart TD
 |---|:---:|:---:|:---:|
 | Zarządzanie kontami, rolami i tokenami aktywacyjnymi | ✓ | - | - |
 | Tworzenie/edycja/dezaktywacja stanowisk | ✓ | - | - |
-| Odczyt stanowisk i grafików | ✓ | ✓ | - |
+| Odczyt stanowisk i grafików | ✓ | ✓ | Lista `collecting` |
 | Tworzenie grafików i zapotrzebowania | - | ✓ | - |
 | Zmiana etapów grafiku i publikacja | - | ✓ | - |
 | Odczyt deklaracji dyspozycyjności | Wszystkie | Wszystkie | Własne |
@@ -124,7 +124,7 @@ Stanowisko to typ pracy wymagany przy definiowaniu obsady zmiany (np. „Kasjer�
 3. `PATCH /positions/{position_id}` - zmiana nazwy (admin).
 4. `POST /positions/{position_id}/deactivation` i `/reactivation` - wyłączenie lub przywrócenie stanowiska (admin).
 
-Nazwa po przycięciu ma 1–120 znaków; unikalność rozróżnia wielkość liter i obejmuje stanowiska nieaktywne. Nowe zapotrzebowanie wymaga aktywnego stanowiska. Dezaktywacja nie usuwa historycznych powiązań.
+Nazwa po przycięciu ma 1-120 znaków; unikalność rozróżnia wielkość liter i obejmuje stanowiska nieaktywne. Nowe zapotrzebowanie wymaga aktywnego stanowiska. Dezaktywacja nie usuwa historycznych powiązań.
 
 ## 6. Grafik miesięczny i zapotrzebowanie (manager)
 
@@ -140,7 +140,7 @@ stateDiagram-v2
     published --> [*]
 ```
 
-Wszystkie przejścia stanów mają prefiks `/schedules/{schedule_id}`. W stanie `draft` manager może również usunąć pusty grafik przez `DELETE /schedules/{schedule_id}`. API nie udostępnia cofania grafiku z `published`.
+Wszystkie przejścia stanów mają prefiks `/schedules/{schedule_id}`. Admin i manager mogą trwale usunąć grafik w dowolnym stanie przez `DELETE /schedules/{schedule_id}`; razem z nim znikają zapotrzebowania, dyspozycyjności i przydziały. API nie udostępnia cofania grafiku z `published`.
 
 ### 6.2. Utworzenie grafiku i zapotrzebowania
 
@@ -163,7 +163,7 @@ Przykład ilustruje strukturę pól; konkretne ID i walidację należy sprawdzi�
 
 ## 7. Dyspozycyjność (employee)
 
-Pracownik zgłasza dyspozycyjność **wyłącznie podczas `collecting`**. Może mieć jedną deklarację na grafik, zawierającą listę wpisów z polami `work_date`, `start_time`, `end_time`, `status` (`available` / `unavailable`) i opcjonalnym `note`.
+Pracownik wybiera grafik z `GET /me/schedules?limit=25&offset=0`, który zwraca tylko grafiki `collecting` (ID jako string BIGINT, rok, miesiąc, status). Zgłasza dyspozycyjność **wyłącznie podczas `collecting`**. Może mieć jedną deklarację na grafik, zawierającą listę wpisów z polami `work_date`, `start_time`, `end_time`, `status` (`available` / `unavailable`) i opcjonalnym `note`.
 
 - `POST /schedules/{schedule_id}/availability-submissions` - utworzenie deklaracji; `submit` domyślnie `false` (szkic).
 - `PATCH /schedules/{schedule_id}/availability-submissions/{submission_id}` - zastąpienie całej listy `entries` lub `submit: true`.

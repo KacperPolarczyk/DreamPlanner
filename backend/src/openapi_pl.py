@@ -11,6 +11,7 @@ TAG_DESCRIPTIONS = {
     "availability-submissions": "Deklaracje dyspozycyjności pracowników.",
     "shift-assignments": "Przydziały pracowników do zmian.",
     "my-shifts": "Własne opublikowane zmiany pracownika.",
+    "my-schedules": "Grafiki dostępne pracownikowi do zgłaszania dyspozycyjności.",
     "users": "Konta użytkowników i operacje administracyjne.",
     "employees": "Lista pracowników dostępnych do przydziału.",
 }
@@ -35,6 +36,8 @@ SCHEMA_DESCRIPTIONS = {
     "CreatedUserResponse": "Dane konta i jednorazowy token aktywacyjny.",
     "EmployeeListItem": "Pracownik dostępny do przydziału.",
     "EmployeeListResponse": "Strona pracowników dostępnych do przydziału.",
+    "EmployeeScheduleItem": "Grafik dostępny do zgłoszenia dyspozycyjności.",
+    "EmployeeScheduleListResponse": "Strona grafików dostępnych do dyspozycyjności.",
     "HealthResponse": "Stan działania procesu API.",
     "LoginInput": "Dane logowania do sesji przeglądarkowej.",
     "MyShiftListResponse": "Strona własnych opublikowanych zmian.",
@@ -161,6 +164,7 @@ FORBIDDEN_DESCRIPTIONS = {
         "Wymagana jest rola admin; własna dezaktywacja jest zabroniona."
     ),
     "Employee role required": "Wymagana jest rola employee.",
+    "Employee required": "Wymagana jest rola employee.",
     "HTTPS required": "Wymagane jest połączenie HTTPS.",
     "HTTPS required in production": "W środowisku produkcyjnym wymagany jest HTTPS.",
     "Manager or admin required": "Wymagana jest rola manager lub admin.",
