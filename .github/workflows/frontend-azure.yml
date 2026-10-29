@@ -1,0 +1,52 @@
+name: Deploy frontend to Azure
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - frontend/**
+      - .github/workflows/frontend-azure.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: frontend-azure-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      ACR_NAME: acrdreamplannerdev77076
+      ACR_SERVER: acrdreamplannerdev77076.azurecr.io
+      WEBAPP_NAME: app-dreamplanner-frontend-77076
+      RESOURCE_GROUP: rg-dreamplanner-dev
+      API_BASE_URL: https://app-dreamplanner-backend-77076-ckceebf7f3gkg3fz.polandcentral-01.azurewebsites.net/api/v1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate using GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: e9ca98d1-e3fa-4c27-8644-49d535427c16
+          tenant-id: d6e86b7e-9310-46e8-9e3c-b44f06df413f
+          subscription-id: 70bfce50-cf28-4ae6-b788-01157f1f4893
+      - name: Build and push frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr login --name "$ACR_NAME"
+          image="$ACR_SERVER/dreamplanner-frontend:$GITHUB_SHA"
+          docker build --build-arg "VITE_API_BASE_URL=$API_BASE_URL" -t "$image" frontend
+          docker push "$image"
+      - name: Deploy immutable image tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          az webapp config container set \
+            --resource-group "$RESOURCE_GROUP" --name "$WEBAPP_NAME" \
+            --container-image-name "$ACR_SERVER/dreamplanner-frontend:$GITHUB_SHA" \
+            --container-registry-url "https://$ACR_SERVER" --output none
