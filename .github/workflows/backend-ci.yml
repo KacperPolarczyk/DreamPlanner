@@ -1,0 +1,86 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - backend/**
+      - .github/workflows/backend-ci.yml
+      - .github/workflows/backend-azure.yml
+  push:
+    branches: [feat/backend-setup]
+    paths:
+      - backend/**
+      - .github/workflows/backend-ci.yml
+      - .github/workflows/backend-azure.yml
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      commit_sha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.15-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-local-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.4'
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked dependencies
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Ruff lint
+        working-directory: backend
+        run: uv run --frozen ruff check .
+      - name: Ruff format
+        working-directory: backend
+        run: uv run --frozen ruff format --check .
+      - name: Unit and API tests
+        working-directory: backend
+        run: uv run --frozen pytest -q -m 'not integration'
+      - name: PostgreSQL integration tests
+        working-directory: backend
+        env:
+          CI_POSTGRES_ADMIN_URL: postgresql://postgres:ci-local-only@127.0.0.1:5432/postgres
+        run: uv run --frozen python scripts/ci_postgres.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+      - name: Build backend container
+        run: docker build --build-arg "RELEASE_ID=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" -f backend/Dockerfile -t dreamplanner-backend:ci backend/
+      - name: Save validated image
+        run: docker save dreamplanner-backend:ci -o "$RUNNER_TEMP/backend-image.tar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}/backend-image.tar
+          if-no-files-found: error
+          retention-days: 7

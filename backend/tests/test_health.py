@@ -4,12 +4,15 @@ from sqlalchemy.pool import NullPool
 from src.main import app
 
 
-def test_health() -> None:
+def test_health(monkeypatch) -> None:
+    monkeypatch.setenv("RELEASE_ID", "123-2")
     client = TestClient(app)
     response = client.get("/api/v1/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert response.headers["x-release-id"] == "123-2"
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_openapi_documents_health() -> None:
@@ -53,6 +56,7 @@ def test_readiness_checks_database_with_bounded_timeouts(monkeypatch) -> None:
         return Engine()
 
     monkeypatch.setattr("src.health.router.create_engine", create_engine)
+    monkeypatch.setenv("RELEASE_ID", "123-2")
     monkeypatch.setenv(
         "DATABASE_URL",
         "postgresql://reader:secret@127.0.0.1:5432/example"
@@ -64,6 +68,7 @@ def test_readiness_checks_database_with_bounded_timeouts(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert response.headers["x-release-id"] == "123-2"
     assert seen["query"] == "SELECT 1"
     assert seen["disposed"] is True
     assert seen["url"].query["connect_timeout"] == "2"

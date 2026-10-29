@@ -1,5 +1,8 @@
 FROM python:3.12-slim-bookworm
 
+ARG RELEASE_ID=local
+ENV RELEASE_ID=${RELEASE_ID}
+
 COPY --from=ghcr.io/astral-sh/uv:0.13.4 /uv /usr/local/bin/uv
 
 WORKDIR /app
