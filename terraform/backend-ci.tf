@@ -5,16 +5,6 @@ variable "backend_webapp_name" {
   type        = string
 }
 
-variable "backend_github_oidc_main_subject" {
-  description = "Verified default OIDC sub for the protected backend-production Environment: repo:OWNER/REPO:environment:backend-production"
-  type        = string
-
-  validation {
-    condition     = can(regex("^repo:[^/]+/[^:]+:environment:backend-production$", var.backend_github_oidc_main_subject))
-    error_message = "Use the verified default GitHub Environment subject for backend-production."
-  }
-}
-
 variable "backend_acr_permissions_mode" {
   description = "Current ACR permission mode: rbac or abac; verify in Azure before applying"
   type        = string
@@ -43,13 +33,13 @@ resource "azurerm_user_assigned_identity" "backend_ci" {
   tags                = local.database_tags
 }
 
-resource "azurerm_federated_identity_credential" "backend_production" {
-  name                = "github-backend-production"
+resource "azurerm_federated_identity_credential" "backend_main" {
+  name                = "github-main"
   resource_group_name = data.azurerm_resource_group.dreamplanner.name
   parent_id           = azurerm_user_assigned_identity.backend_ci.id
   audience            = ["api://AzureADTokenExchange"]
   issuer              = "https://token.actions.githubusercontent.com"
-  subject             = var.backend_github_oidc_main_subject
+  subject             = "repo:KacperPolarczyk@95491287/DreamPlanner@1402865452:ref:refs/heads/main"
 }
 
 resource "azurerm_role_assignment" "backend_ci_host" {

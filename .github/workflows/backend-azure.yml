@@ -10,16 +10,16 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Deploy current main or restore a recorded release
+        description: Deploy current main, redeploy its recorded image, or roll back
         required: true
         type: choice
-        options: [deploy, rollback]
+        options: [deploy, redeploy, rollback]
       commit_sha:
         description: Full SHA to deploy (must equal current main)
         required: false
         type: string
       release_run_id:
-        description: Successful deployment run ID to restore
+        description: Successful release run ID for redeploy or rollback
         required: false
         type: string
 
@@ -51,9 +51,13 @@ jobs:
         run: |
           set -euo pipefail
           action="${REQUESTED_ACTION:-deploy}"
-          [[ "$action" == deploy || "$action" == rollback ]] || exit 1
-          if [[ "$action" == deploy ]]; then
-            [[ -z "$RELEASE_RUN_ID" ]] || exit 1
+          [[ "$action" == deploy || "$action" == redeploy || "$action" == rollback ]] || exit 1
+          if [[ "$action" == deploy || "$action" == redeploy ]]; then
+            if [[ "$action" == deploy ]]; then
+              [[ -z "$RELEASE_RUN_ID" ]] || exit 1
+            else
+              [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+            fi
             sha="${REQUESTED_SHA:-$GITHUB_SHA}"
             [[ "$sha" =~ ^[0-9a-fA-F]{40}$ ]] || exit 1
             git cat-file -e "$sha^{commit}"
@@ -65,7 +69,7 @@ jobs:
           echo "action=$action" >> "$GITHUB_OUTPUT"
 
   ci:
-    if: needs.resolve.outputs.action == 'deploy'
+    if: needs.resolve.outputs.action != 'rollback'
     needs: resolve
     permissions:
       contents: read
@@ -77,7 +81,6 @@ jobs:
     if: always() && needs.resolve.result == 'success' && (needs.ci.result == 'success' || (needs.resolve.outputs.action == 'rollback' && needs.ci.result == 'skipped'))
     needs: [resolve, ci]
     runs-on: ubuntu-latest
-    environment: backend-production
     permissions:
       contents: read
       actions: read
@@ -112,7 +115,7 @@ jobs:
           fetch-depth: 0
       - name: Verify recorded rollback release
         id: rollback
-        if: needs.resolve.outputs.action == 'rollback'
+        if: needs.resolve.outputs.action != 'deploy'
         shell: bash
         run: |
           set -euo pipefail
@@ -124,7 +127,7 @@ jobs:
             jq -e --arg name "$name" '.artifacts[] | select(.name == $name and .expired == false)' > /dev/null
           echo "artifact_name=$name" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
-        if: needs.resolve.outputs.action == 'rollback'
+        if: needs.resolve.outputs.action != 'deploy'
         with:
           name: ${{ steps.rollback.outputs.artifact_name }}
           run-id: ${{ inputs.release_run_id }}
@@ -174,7 +177,7 @@ jobs:
             echo "expected_release_id=$expected_id"
           } >> "$GITHUB_ENV"
       - name: Verify rollback record and digest
-        if: needs.resolve.outputs.action == 'rollback'
+        if: needs.resolve.outputs.action != 'deploy'
         shell: bash
         run: |
           set -euo pipefail
@@ -189,6 +192,9 @@ jobs:
           sha="$(jq -r '.source_sha' "$record")"
           git cat-file -e "$sha^{commit}"
           git merge-base --is-ancestor "$sha" refs/remotes/origin/main
+          if [[ "$RELEASE_ACTION" == redeploy ]]; then
+            [[ "$sha" == "$COMMIT_SHA" ]] || { echo 'Redeploy record must belong to current main'; exit 1; }
+          fi
           digest="$(jq -r '.digest' "$record")"
           az acr repository show --name "$ACR_NAME" --image "$IMAGE_REPOSITORY@$digest" --output none
           {
@@ -201,7 +207,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$RELEASE_ACTION" == deploy ]]; then
+          if [[ "$RELEASE_ACTION" != rollback ]]; then
             git fetch --no-tags origin main
             [[ "$(git rev-parse refs/remotes/origin/main)" == "$COMMIT_SHA" ]] || {
               echo 'Newer main commit exists; refusing stale deployment'
