@@ -1,6 +1,8 @@
 """Pin Uvicorn proxy handling and its effect on authentication limits."""
 
 import asyncio
+import base64
+import secrets
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +20,16 @@ TRUSTED_V4 = "192.0.2.10"
 TRUSTED_V6 = "2001:db8::10"
 UNTRUSTED_V4 = "198.51.100.10"
 LOGIN = "/api/v1/auth/sessions"
+
+
+def _configure_test_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Supply a test-only codec so the proxy checks reach invalid credentials."""
+    monkeypatch.setenv(
+        "JWT_SIGNING_KEY_BASE64", base64.b64encode(secrets.token_bytes(32)).decode()
+    )
+    monkeypatch.setenv("JWT_CURRENT_KID", "proxy-test-v1")
+    monkeypatch.setenv("JWT_ISSUER", "dreamplanner-proxy-test")
+    monkeypatch.setenv("JWT_AUDIENCE", "dreamplanner-proxy-api")
 
 
 def _scope_after_proxy(
@@ -142,6 +154,7 @@ def test_uvicorn_proxy_scope(peer, headers, expected_scheme, expected_client) ->
 @pytest.fixture
 def auth_app(monkeypatch: pytest.MonkeyPatch):
     """Use real auth routes and counters without a database connection."""
+    _configure_test_jwt(monkeypatch)
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("REFRESH_COOKIE_SECURE", "true")
     monkeypatch.setenv("CORS_ORIGINS", '["https://app.example.com"]')
@@ -220,6 +233,7 @@ def test_untrusted_spoofed_for_cannot_rotate_ip_limit(auth_app) -> None:
 
 def test_local_http_ignores_proxy_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     """Direct local HTTP continues to ignore client-provided proxy headers."""
+    _configure_test_jwt(monkeypatch)
     monkeypatch.setenv("ENVIRONMENT", "local")
     monkeypatch.setenv("REFRESH_COOKIE_SECURE", "false")
     monkeypatch.setenv("CORS_ORIGINS", '["http://localhost:5173"]')

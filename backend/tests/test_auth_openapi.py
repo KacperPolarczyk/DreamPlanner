@@ -2,7 +2,8 @@
 
 from fastapi.testclient import TestClient
 
-from src.main import app
+from src.core.database import get_session
+from src.main import app, create_app
 
 
 def test_openapi_keeps_bearer_jwt_on_protected_routes_only() -> None:
@@ -55,7 +56,9 @@ def test_openapi_describes_admin_role_for_every_admin_operation() -> None:
 
 def test_openapi_validation_problem_matches_http_shape() -> None:
     """Document field errors on 422 without adding them to other problems."""
-    schema = app.openapi()
+    test_app = create_app()
+    test_app.dependency_overrides[get_session] = lambda: object()
+    schema = test_app.openapi()
     for path in schema["paths"].values():
         for operation in path.values():
             responses = operation.get("responses", {})
@@ -85,7 +88,7 @@ def test_openapi_validation_problem_matches_http_shape() -> None:
     ]["application/problem+json"]["schema"]
     assert "errors" not in ordinary["properties"]
 
-    with TestClient(app) as client:
+    with TestClient(test_app) as client:
         response = client.post(
             "/api/v1/auth/sessions",
             headers={"Origin": "http://localhost:5173"},

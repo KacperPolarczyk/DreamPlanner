@@ -44,6 +44,24 @@ class ScheduleListResponse(BaseModel):
     total: int
 
 
+class EmployeeScheduleItem(BaseModel):
+    """Minimal collecting schedule visible to an employee."""
+
+    id: str
+    year: int
+    month: int
+    status: Literal["collecting"]
+
+
+class EmployeeScheduleListResponse(BaseModel):
+    """One page of schedules accepting employee availability."""
+
+    items: list[EmployeeScheduleItem]
+    limit: int
+    offset: int
+    total: int
+
+
 class ShiftRequirementResponse(BaseModel):
     """The approved public fields of one staffing requirement."""
 

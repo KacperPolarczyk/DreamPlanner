@@ -1,6 +1,8 @@
 """Public liveness and database readiness routes."""
 
-from fastapi import APIRouter
+import os
+
+from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
@@ -13,8 +15,10 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponse, summary="Sprawdź stan API")
-async def get_health() -> HealthResponse:
+async def get_health(response: Response) -> HealthResponse:
     """Confirm process liveness without checking downstream dependencies."""
+    response.headers["X-Release-Id"] = os.getenv("RELEASE_ID", "local")
+    response.headers["Cache-Control"] = "no-store"
     return HealthResponse(status="ok")
 
 
@@ -42,8 +46,10 @@ def _check_database_ready() -> None:
 @router.get(
     "/health/ready", response_model=HealthResponse, summary="Sprawdź gotowość API"
 )
-def get_readiness() -> HealthResponse | JSONResponse:
+def get_readiness(response: Response) -> HealthResponse | JSONResponse:
     """Sprawdza gotowość API przez odczytowe połączenie z PostgreSQL."""
+    response.headers["X-Release-Id"] = os.getenv("RELEASE_ID", "local")
+    response.headers["Cache-Control"] = "no-store"
     try:
         _check_database_ready()
     except Exception:

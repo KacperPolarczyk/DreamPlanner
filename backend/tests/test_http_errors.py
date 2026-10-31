@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.auth.dependencies import AuthHttpError
 from src.auth.rate_limits import RateLimited
+from src.core.database import get_session
 from src.main import create_app
 
 
@@ -43,6 +44,7 @@ def test_missing_jwt_signing_configuration_returns_documented_503() -> None:
     """A protected request receives the safe conditional service problem."""
     app = create_app()
     app.state.jwt_codec = None
+    app.dependency_overrides[get_session] = lambda: object()
     with TestClient(app) as client:
         response = client.get(
             "/api/v1/users/me", headers={"Authorization": "Bearer test-token"}

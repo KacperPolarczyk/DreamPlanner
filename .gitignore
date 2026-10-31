@@ -38,6 +38,7 @@ build/
 
 /backend/*.md
 !/backend/README.md
+!/backend/API_WORKFLOW.md
 
 # Local backend reference directories
 /backend/.*-reference/
