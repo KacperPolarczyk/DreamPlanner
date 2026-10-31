@@ -139,6 +139,26 @@ Poniższe adresy dotyczą uruchomienia API bez kontenera. Dla wariantu Docker Co
 
 ## Testowanie
 
+### CI/CD w Azure
+
+Workflow `.github/workflows/backend-azure.yml` sprawdza lint, formatowanie i testy
+jednostkowe na pull requestach do `main` oraz po zmianach backendu na `main`.
+Po udanych testach na `main` buduje obraz `dreamplanner-backend:<SHA>`, wysyła go
+do `acrdreamplannerdev77076` i aktualizuje kontener `main` istniejącego App Service.
+Można go także uruchomić ręcznie przez GitHub Actions dla gałęzi `main`.
+
+Logowanie odbywa się przez OIDC tożsamości `id-dreamplanner-backend-github`:
+`AcrPush` na ACR oraz `Website Contributor` na aplikacji backendu. Obrazy i sekrety
+Key Vault pobiera systemowa tożsamość App Service, z rolami `AcrPull` oraz
+`Key Vault Secrets User`. Workflow nie wymaga hasła Azure ani dostępu do sekretów bazy.
+
+Backend korzysta z konfiguracji App Service `sitecontainers` i portu 8000.
+Po aktualizacji obrazu workflow restartuje aplikację i sprawdza
+`/api/v1/health/ready`; brak gotowości oznacza nieudane wdrożenie w Actions.
+Nie wykonuje automatycznych migracji ani rollbacku. Zmiany schematu trzeba
+wdrażać osobno z dostępem do prywatnej sieci i kontem migracyjnym.
+Testy oznaczone `integration` wymagają osobnej bazy i nie wchodzą do tego workflow.
+
 Z katalogu `backend/` uruchom:
 
 ```sh

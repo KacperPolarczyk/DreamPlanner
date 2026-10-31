@@ -1,0 +1,97 @@
+name: Test and deploy backend to Azure
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - backend/**
+      - .github/workflows/backend-azure.yml
+  push:
+    branches: [main]
+    paths:
+      - backend/**
+      - .github/workflows/backend-azure.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: '0.13.4'
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install Python and locked dependencies
+        run: uv sync --frozen --python 3.12
+      - name: Lint
+        run: uv run --no-sync ruff check .
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check .
+      - name: Unit tests
+        run: uv run --no-sync pytest -m 'not integration' -q
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: backend-azure-main
+      cancel-in-progress: false
+    env:
+      ACR_NAME: acrdreamplannerdev77076
+      ACR_SERVER: acrdreamplannerdev77076.azurecr.io
+      RESOURCE_GROUP: rg-dreamplanner-dev
+      WEBAPP_NAME: app-dreamplanner-backend-77076
+      API_URL: https://app-dreamplanner-backend-77076-ckceebf7f3gkg3fz.polandcentral-01.azurewebsites.net
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate using GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: fab4c6ad-871e-4934-961b-b65f45422c0a
+          tenant-id: d6e86b7e-9310-46e8-9e3c-b44f06df413f
+          subscription-id: 70bfce50-cf28-4ae6-b788-01157f1f4893
+      - name: Build and push immutable image
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr login --name "$ACR_NAME"
+          image="$ACR_SERVER/dreamplanner-backend:$GITHUB_SHA"
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$image" backend
+          docker push "$image"
+      - name: Deploy backend site container
+        shell: bash
+        run: |
+          set -euo pipefail
+          az webapp sitecontainers update \
+            --resource-group "$RESOURCE_GROUP" --name "$WEBAPP_NAME" \
+            --container-name main --image "$ACR_SERVER/dreamplanner-backend:$GITHUB_SHA" \
+            --system-assigned-identity true --output none
+          az webapp restart --resource-group "$RESOURCE_GROUP" --name "$WEBAPP_NAME"
+      - name: Verify database readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 15 "$API_URL/api/v1/health/ready"; then
+              echo
+              echo "Backend readiness check passed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Backend did not become ready after deployment." >&2
+          exit 1
