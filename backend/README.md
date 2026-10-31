@@ -148,16 +148,41 @@ do `acrdreamplannerdev77076` i aktualizuje kontener `main` istniejącego App Ser
 Można go także uruchomić ręcznie przez GitHub Actions dla gałęzi `main`.
 
 Logowanie odbywa się przez OIDC tożsamości `id-dreamplanner-backend-github`:
-`AcrPush` na ACR oraz `Website Contributor` na aplikacji backendu. Obrazy i sekrety
+`AcrPush` na ACR oraz `Website Contributor` na aplikacji backendu. CI ma także
+odczyt wyłącznie sekretu `database-url-migration` oraz własną rolę zarządzania
+regułami zapory wyłącznie na serwerze PostgreSQL. Obrazy i sekrety
 Key Vault pobiera systemowa tożsamość App Service, z rolami `AcrPull` oraz
-`Key Vault Secrets User`. Workflow nie wymaga hasła Azure ani dostępu do sekretów bazy.
+`Key Vault Secrets User`. Workflow nie wymaga stałego hasła Azure w GitHub Secrets.
 
 Backend korzysta z konfiguracji App Service `sitecontainers` i portu 8000.
-Po aktualizacji obrazu workflow restartuje aplikację i sprawdza
+Przed aktualizacją aplikacji workflow uruchamia migracje z nowego obrazu,
+korzystając z konta `dreamplanner_migrator`. Po aktualizacji obrazu restartuje
+aplikację i sprawdza
 `/api/v1/health/ready`; brak gotowości oznacza nieudane wdrożenie w Actions.
-Nie wykonuje automatycznych migracji ani rollbacku. Zmiany schematu trzeba
-wdrażać osobno z dostępem do prywatnej sieci i kontem migracyjnym.
+Kolejność: testy → build/push → migracje → usunięcie reguły zapory → deploy → readiness.
+Nieudana migracja blokuje wdrożenie nowego backendu. Nie ma automatycznego downgrade.
 Testy oznaczone `integration` wymagają osobnej bazy i nie wchodzą do tego workflow.
+
+### Automatyczne migracje
+
+`python -m src.migrate` sprawdza nazwę serwera, bazę `dreamplanner`, konto
+`dreamplanner_migrator` i TLS `verify-full`. Zakłada blokadę doradczą PostgreSQL,
+wykonuje `alembic upgrade head` i sprawdza zgodność rewizji bazy z jedynym head
+w obrazie. Próby połączenia są ponawiane przez czas propagacji zapory; nieudane
+DDL nie jest ponawiane. Limity oczekiwania na blokady i wykonania instrukcji
+ustawia pipeline przez `PGOPTIONS`. Sekret jest pobierany tylko na czas kroku,
+maskowany w Actions i przekazywany przez środowisko procesu do kontenera.
+
+GitHub-hosted runner korzysta z już włączonego publicznego endpointu PostgreSQL.
+Pipeline tworzy pojedynczą regułę `/32` o nazwie `github-backend-<run>-<attempt>`
+i usuwa ją w kroku `always()`, także po błędzie migracji. Nie zmienia istniejącej
+reguły DBA ani prywatnej trasy aplikacji. Przy awaryjnym przerwaniu runnera cleanup
+może nie wykonać się; przed wznowieniem należy usunąć pozostawioną regułę.
+Wyłączenie publicznego endpointu wymaga przeniesienia migracji na runner w VNet.
+
+Migracje powinny zachowywać zgodność z aktualnie działającą wersją backendu:
+najpierw dodanie nowych struktur, a usuwanie starych dopiero w kolejnym wdrożeniu.
+Przywracanie danych z backupu pozostaje osobną operacją DBA.
 
 Z katalogu `backend/` uruchom:
 
