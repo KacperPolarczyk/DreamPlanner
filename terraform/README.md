@@ -58,6 +58,26 @@ The Terraform state must not be committed to Git.
 
 ## Deployment
 
+### Backend CI and migrations
+
+`backend-access.tf` records the backend deployment and runtime role assignments.
+`backend-migrations.tf` grants the GitHub OIDC identity read access to only
+`database-url-migration` and a custom firewall-rule role on the PostgreSQL server.
+It cannot change server settings, grant IAM roles or read the administrator secret
+through these new migration grants. Firewall permissions cover all rules on that
+server; the workflow only creates and deletes its own per-run rule.
+
+These IAM resources were provisioned through Azure CLI. Import the existing role
+assignments and custom role into the existing Terraform state before applying;
+otherwise Terraform may attempt duplicate assignments. Review the complete plan:
+the older database configuration still declares the deleted user-assigned backend
+identity. Do not apply that stale declaration as part of enabling migrations.
+
+The GitHub-hosted runner temporarily uses the already-enabled public PostgreSQL
+endpoint with a single IPv4 firewall rule and TLS hostname verification. It does
+not change the application's private database route. See the backend README for
+execution order, cleanup and migration compatibility requirements.
+
 Prerequisites:
 
 - Azure CLI
