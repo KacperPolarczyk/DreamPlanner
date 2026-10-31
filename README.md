@@ -2,6 +2,23 @@
 
 DreamPlanner służy do planowania dyspozycyjności pracowników i zleceniobiorców oraz układania miesięcznych grafików pracy. Administrator zarządza kontami i stanowiskami, manager tworzy grafiki, zbiera dyspozycyjność, obsadza zmiany i publikuje grafik, a pracownik zgłasza dostępność i przegląda swoje opublikowane zmiany.
 
+## Spis treści
+
+- [Technologie i architektura](#technologie-i-architektura)
+- [Endpointy API](#endpointy-api)
+  - [Stan usługi i uwierzytelnianie](#stan-usługi-i-uwierzytelnianie)
+  - [Użytkownicy i stanowiska](#użytkownicy-i-stanowiska)
+  - [Grafiki i zapotrzebowanie](#grafiki-i-zapotrzebowanie)
+  - [Dyspozycyjność i obsada](#dyspozycyjność-i-obsada)
+  - [Przykładowe JSON i kody odpowiedzi](#przykładowe-json-i-kody-odpowiedzi)
+- [Uruchomienie lokalne](#uruchomienie-lokalne)
+  - [Wymagania wstępne](#wymagania-wstępne)
+  - [Uruchomienie backendu](#uruchomienie-backendu)
+  - [Uruchomienie frontendu](#uruchomienie-frontendu)
+  - [Adresy aplikacji](#adresy-aplikacji)
+- [Testowanie](#testowanie)
+- [CI/CD](#cicd)
+
 ## Technologie i architektura
 
 | Warstwa | Technologie |
