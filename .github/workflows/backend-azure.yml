@@ -20,6 +20,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Test-only configuration; no connection to the Azure database.
+      DATABASE_URL: postgresql+psycopg://ci:ci@127.0.0.1:5432/dreamplanner_ci
+      JWT_CURRENT_KID: ci-v1
+      JWT_ISSUER: dreamplanner-ci
+      JWT_AUDIENCE: dreamplanner-api
     defaults:
       run:
         working-directory: backend
@@ -36,6 +42,8 @@ jobs:
         run: uv run --no-sync ruff check .
       - name: Check formatting
         run: uv run --no-sync ruff format --check .
+      - name: Generate ephemeral test signing key
+        run: echo "JWT_SIGNING_KEY_BASE64=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       - name: Unit tests
         run: uv run --no-sync pytest -m 'not integration' -q
 
