@@ -62,6 +62,9 @@ def get_readiness(response: Response) -> HealthResponse | JSONResponse:
             },
             status_code=503,
             media_type="application/problem+json",
-            headers={"Cache-Control": "no-store"},
+            headers={
+                "X-Release-Id": os.getenv("RELEASE_ID", "local"),
+                "Cache-Control": "no-store",
+            },
         )
     return HealthResponse(status="ok")

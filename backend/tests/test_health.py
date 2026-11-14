@@ -84,6 +84,7 @@ def test_readiness_checks_database_with_bounded_timeouts(monkeypatch) -> None:
 def test_readiness_failure_is_redacted_and_liveness_survives(monkeypatch) -> None:
     """A database failure returns a safe 503 without changing liveness."""
     secret = "password=secret database=internal"
+    monkeypatch.setenv("RELEASE_ID", "123-2")
 
     def fail():
         raise RuntimeError(secret)
@@ -95,6 +96,7 @@ def test_readiness_failure_is_redacted_and_liveness_survives(monkeypatch) -> Non
 
     assert readiness.status_code == 503
     assert readiness.headers["content-type"] == "application/problem+json"
+    assert readiness.headers["x-release-id"] == "123-2"
     assert readiness.headers["cache-control"] == "no-store"
     assert readiness.json() == {
         "type": "about:blank",

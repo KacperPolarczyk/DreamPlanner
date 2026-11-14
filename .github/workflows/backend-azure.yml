@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
           az acr login --name "$ACR_NAME"
           image="$ACR_SERVER/dreamplanner-backend:$GITHUB_SHA"
-          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$image" backend
+          docker build --build-arg "RELEASE_ID=$GITHUB_SHA" --label "org.opencontainers.image.revision=$GITHUB_SHA" -t "$image" backend
           docker push "$image"
       - name: Allow this runner for database migrations
         shell: bash
