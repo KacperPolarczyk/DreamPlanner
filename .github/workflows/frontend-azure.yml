@@ -10,38 +10,73 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: frontend-azure-main
   cancel-in-progress: false
 
 jobs:
+  # FAZA 1: CI - deploy nie ruszy, jeśli lint albo build się nie powiedzie
+  build-and-test:
+    name: Frontend - lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+
+  # FAZA 2: CD - tylko po sukcesie CI i tylko na main
   deploy:
+    name: Deploy frontend to Azure App Service
+    needs: build-and-test
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
     env:
       ACR_NAME: acrdreamplannerdev77076
       ACR_SERVER: acrdreamplannerdev77076.azurecr.io
       WEBAPP_NAME: app-dreamplanner-frontend-77076
       RESOURCE_GROUP: rg-dreamplanner-dev
+      FRONTEND_URL: https://app-dreamplanner-frontend-77076.azurewebsites.net
       API_BASE_URL: https://app-dreamplanner-backend-77076-ckceebf7f3gkg3fz.polandcentral-01.azurewebsites.net/api/v1
     steps:
       - uses: actions/checkout@v4
+
       - name: Authenticate using GitHub OIDC
         uses: azure/login@v2
         with:
           client-id: e9ca98d1-e3fa-4c27-8644-49d535427c16
           tenant-id: d6e86b7e-9310-46e8-9e3c-b44f06df413f
           subscription-id: 70bfce50-cf28-4ae6-b788-01157f1f4893
-      - name: Build and push frontend
+
+      - name: Build and push frontend image
         shell: bash
         run: |
           set -euo pipefail
           az acr login --name "$ACR_NAME"
           image="$ACR_SERVER/dreamplanner-frontend:$GITHUB_SHA"
-          docker build --build-arg "VITE_API_BASE_URL=$API_BASE_URL" -t "$image" frontend
+          docker build \
+            --build-arg "VITE_API_BASE_URL=$API_BASE_URL" \
+            --build-arg "APP_VERSION=$GITHUB_SHA" \
+            -t "$image" frontend
           docker push "$image"
+
       - name: Deploy immutable image tag
         shell: bash
         run: |
@@ -50,3 +85,21 @@ jobs:
             --resource-group "$RESOURCE_GROUP" --name "$WEBAPP_NAME" \
             --container-image-name "$ACR_SERVER/dreamplanner-frontend:$GITHUB_SHA" \
             --container-registry-url "https://$ACR_SERVER" --output none
+
+      # E5: publiczny URL musi zwrócić wersję = commit, który właśnie wdrożyliśmy
+      - name: Live healthcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            live=$(curl -fsS "$FRONTEND_URL/version.txt" 2>/dev/null || true)
+            echo "Próba $i: live='$live', oczekiwana='$GITHUB_SHA'"
+            if [ "$live" = "$GITHUB_SHA" ]; then
+              curl -fsS -o /dev/null "$FRONTEND_URL/"
+              echo "OK: $FRONTEND_URL działa i serwuje wersję $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "BŁĄD: po 5 minutach $FRONTEND_URL nie serwuje wersji $GITHUB_SHA"
+          exit 1
