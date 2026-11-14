@@ -1,0 +1,71 @@
+name: Database CI
+
+on:
+  push:
+    branches: [main, ci/database-validation]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    name: PostgreSQL - migrations and integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-disposable-postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      CI_POSTGRES_ADMIN_URL: postgresql://postgres:ci-disposable-postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres
+      CI_POSTGRES_REPORT_DIR: ${{ github.workspace }}/database-test-results
+      JWT_CURRENT_KID: ci-v1
+      JWT_ISSUER: dreamplanner-ci
+      JWT_AUDIENCE: dreamplanner-api
+      PGCONNECT_TIMEOUT: '10'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: '0.13.4'
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install locked dependencies
+        run: uv sync --frozen --python 3.12
+      - name: Generate disposable signing key
+        run: echo "JWT_SIGNING_KEY_BASE64=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+      - name: Check database test tooling
+        run: uv run --no-sync ruff check scripts/ci_postgres.py tests/integration/test_runtime_privileges_postgres.py
+      - name: Run isolated PostgreSQL integration suite
+        run: uv run --no-sync python scripts/ci_postgres.py
+      - name: Publish test summary
+        if: always()
+        run: |
+          if [ -f "$CI_POSTGRES_REPORT_DIR/summary.md" ]; then
+            cat "$CI_POSTGRES_REPORT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload database test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-test-results
+          path: database-test-results/
+          if-no-files-found: error
+          retention-days: 14

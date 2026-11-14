@@ -193,3 +193,10 @@ uv run ruff format --check .
 ```
 
 Część testów integracyjnych wymaga osobnej bazy PostgreSQL. Nie uruchamiaj ich na bazie produkcyjnej.
+
+### Testy PostgreSQL w CI
+
+Osobny workflow `database-ci.yml` uruchamia pełny zestaw testów integracyjnych
+na jednorazowym PostgreSQL 16 i publikuje raporty JUnit. Nie wymaga dostępu
+do Azure. Zakres, izolację i wymagany status ochrony gałęzi opisuje
+[database/ci.md](../database/ci.md).
