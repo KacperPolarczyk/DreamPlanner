@@ -5,7 +5,9 @@ RUN npm ci
 COPY . .
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-RUN npm run build
+ARG APP_VERSION=local
+ENV VITE_APP_VERSION=$APP_VERSION
+RUN npm run build && echo "$APP_VERSION" > dist/version.txt
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
