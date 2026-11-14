@@ -42,3 +42,6 @@ build/
 
 # Local backend reference directories
 /backend/.*-reference/
+
+# Disposable database test reports
+database-test-results/

@@ -193,13 +193,15 @@ def _ordered_writes(
     second: Callable[[Session], object],
 ) -> tuple[object, object]:
     """Hold the first write before commit until PostgreSQL reports a blocked peer."""
+    # Keep each committed result in memory: an implicit reload after releasing
+    # the lock can legitimately observe the next writer under READ COMMITTED.
     first_ready = Event()
     second_ready = Event()
     release_first = Event()
     pids: dict[str, int] = {}
 
     def first_worker():
-        with factory() as session:
+        with factory(expire_on_commit=False) as session:
             pids["first"] = session.scalar(text("SELECT pg_backend_pid()"))
 
             def pause_before_commit(current: Session) -> None:
@@ -213,7 +215,7 @@ def _ordered_writes(
             return result.id, result.name, result.is_active
 
     def second_worker():
-        with factory() as session:
+        with factory(expire_on_commit=False) as session:
             pids["second"] = session.scalar(text("SELECT pg_backend_pid()"))
             second_ready.set()
             result = second(session)

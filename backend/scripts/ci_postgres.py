@@ -1,5 +1,6 @@
 """Run each PostgreSQL integration module against its own disposable local database."""
 
+import json
 import os
 import re
 import secrets
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from shutil import copyfile
 
 import psycopg
 from alembic.config import Config
@@ -44,6 +46,9 @@ def main() -> int:
     migration_password = secrets.token_urlsafe(32)
     totals = {key: 0 for key in ("passed", "failed", "skipped", "errors")}
     failed = False
+    reports = Path(os.getenv("CI_POSTGRES_REPORT_DIR", "database-test-results"))
+    reports.mkdir(parents=True, exist_ok=True)
+    module_results = []
     with psycopg.connect(admin_url, autocommit=True) as connection:
         for role, password in (
             ("dreamplanner_app", app_password),
@@ -52,6 +57,11 @@ def main() -> int:
             connection.execute(
                 sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
                     sql.Identifier(role), sql.Literal(password)
+                )
+            )
+            connection.execute(
+                sql.SQL("ALTER ROLE {} SET timezone TO 'UTC'").format(
+                    sql.Identifier(role)
                 )
             )
 
@@ -170,6 +180,8 @@ def main() -> int:
                     env=environment,
                     check=False,
                 )
+                if report.exists():
+                    copyfile(report, reports / report.name)
                 root = ET.parse(report).getroot() if report.exists() else None
                 suite = (
                     root.find("testsuite")
@@ -188,6 +200,7 @@ def main() -> int:
                     counts["errors"] = 1
                 for key, value in counts.items():
                     totals[key] += value
+                module_results.append({"module": module.name, **counts})
                 print(
                     f"{module.name}: "
                     + ", ".join(f"{key}={value}" for key, value in counts.items()),
@@ -209,6 +222,28 @@ def main() -> int:
         "PostgreSQL integration total: "
         + ", ".join(f"{key}={value}" for key, value in totals.items())
     )
+    (reports / "summary.json").write_text(
+        json.dumps({"totals": totals, "modules": module_results}, indent=2) + "\n"
+    )
+    rows = [
+        "# PostgreSQL integration results",
+        "",
+        "Disposable local PostgreSQL; no Azure credentials or network access required.",
+        "",
+        "| Module | Passed | Failed | Skipped | Errors |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for result in module_results:
+        rows.append(
+            "| "
+            + " | ".join(
+                str(result[key])
+                for key in ("module", "passed", "failed", "skipped", "errors")
+            )
+            + " |"
+        )
+    rows.extend(["", "Totals: " + ", ".join(f"{k}={v}" for k, v in totals.items()), ""])
+    (reports / "summary.md").write_text("\n".join(rows))
     return int(failed)
 
 
