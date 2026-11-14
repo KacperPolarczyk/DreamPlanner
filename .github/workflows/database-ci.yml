@@ -34,7 +34,6 @@ jobs:
       run:
         working-directory: backend
     env:
-      CI_POSTGRES_ADMIN_URL: postgresql://postgres:ci-disposable-postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres
       CI_POSTGRES_REPORT_DIR: ${{ github.workspace }}/database-test-results
       JWT_CURRENT_KID: ci-v1
       JWT_ISSUER: dreamplanner-ci
@@ -54,6 +53,8 @@ jobs:
       - name: Check database test tooling
         run: uv run --no-sync ruff check scripts/ci_postgres.py tests/integration/test_runtime_privileges_postgres.py
       - name: Run isolated PostgreSQL integration suite
+        env:
+        CI_POSTGRES_ADMIN_URL: postgresql://postgres:ci-disposable-postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres
         run: uv run --no-sync python scripts/ci_postgres.py
       - name: Publish test summary
         if: always()
