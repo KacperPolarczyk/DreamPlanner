@@ -1,5 +1,6 @@
 FROM python:3.12-slim-bookworm
 
+# Local builds use "local"; deployment builds pass the full commit SHA.
 ARG RELEASE_ID=local
 ENV RELEASE_ID=${RELEASE_ID}
 
