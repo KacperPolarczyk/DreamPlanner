@@ -2,6 +2,11 @@ name: Deploy frontend to Azure
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - frontend/**
+      - .github/workflows/frontend-azure.yml
   push:
     branches: [main]
     paths:
@@ -12,9 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: frontend-azure-main
+  group: frontend-azure-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
   # FAZA 1: CI - deploy nie ruszy, jeśli lint albo build się nie powiedzie
   build-and-test:
