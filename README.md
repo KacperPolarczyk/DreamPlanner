@@ -18,6 +18,7 @@ DreamPlanner służy do planowania dyspozycyjności pracowników i zleceniobiorc
   - [Adresy aplikacji](#adresy-aplikacji)
 - [Testowanie](#testowanie)
 - [CI/CD](#cicd)
+- [Bezpieczeństwo i hardening](#bezpieczeństwo-i-hardening)
 
 ## Technologie i architektura
 
@@ -325,3 +326,30 @@ uv run ruff format --check .
 ## CI/CD
 
 Workflow [backend Azure](.github/workflows/backend-azure.yml) na pull requestach do `main` i po zmianach backendu na `main` wykonuje Ruff, kontrolę formatowania i testy bez grupy `integration`. Po udanych kontrolach na `main` publikuje obraz w Azure Container Registry, uruchamia migracje przed wdrożeniem, aktualizuje backend w App Service i sprawdza `/api/v1/health/ready`. Workflow [frontend Azure](.github/workflows/frontend-azure.yml) reaguje na zmiany frontendu na `main`: buduje obraz z `npm run build`, wysyła go do rejestru i aktualizuje frontend w App Service. Oba workflow można uruchomić ręcznie na `main` i używają GitHub OIDC. Zmiana samego głównego README nie uruchamia tych workflow.
+
+## Bezpieczeństwo i hardening
+
+### Reguły zaporowe
+
+| Warstwa | Kierunek | Port | Źródło / Cel | Akcja | Opis |
+|---|---|---|---|---|---|
+| Web (Frontend App Service) | Inbound | 443 (HTTPS) | Internet (0.0.0.0/0) | Allow | Dostęp użytkowników, certyfikat Azure `*.azurewebsites.net` |
+| Web (Frontend App Service) | Inbound | 80 (HTTP) | Internet (0.0.0.0/0) | Redirect 301 → 443 | Włączone HTTPS Only |
+| Web (Frontend App Service) | Outbound | 443 | Backend API (App Service) | Allow | Wywołania REST API wyłącznie po HTTPS |
+| App (Backend) | | | | | *uzupełnia backend* |
+| Data (PostgreSQL) | | | | | *uzupełnia DB* |
+
+### Hardening warstwy Web (frontend)
+
+- Wymuszone HTTPS: przekierowanie HTTP → HTTPS (301), certyfikat TLS zarządzany przez Azure.
+- Frontend komunikuje się z API wyłącznie przez HTTPS (`VITE_API_BASE_URL`).
+- Własna konfiguracja nginx (`frontend/nginx.conf`):
+  - `server_tokens off` – ukrycie wersji serwera,
+  - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`,
+  - fallback SPA (`try_files ... /index.html`).
+
+Weryfikacja:
+```bash
+curl -I http://app-dreamplanner-frontend-77076.azurewebsites.net   # 301 → https
+curl -I https://app-dreamplanner-frontend-77076.azurewebsites.net  # 200 + nagłówki bezpieczeństwa
+```
