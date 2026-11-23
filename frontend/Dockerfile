@@ -10,6 +10,7 @@ ENV VITE_APP_VERSION=$APP_VERSION
 RUN npm run build && echo "$APP_VERSION" > dist/version.txt
 
 FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
