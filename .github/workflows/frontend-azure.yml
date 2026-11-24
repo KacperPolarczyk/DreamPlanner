@@ -59,6 +59,7 @@ jobs:
       RESOURCE_GROUP: rg-dreamplanner-dev
       FRONTEND_URL: https://app-dreamplanner-frontend-77076.azurewebsites.net
       API_BASE_URL: https://app-dreamplanner-backend-77076-ckceebf7f3gkg3fz.polandcentral-01.azurewebsites.net/api/v1
+      APPINSIGHTS_CONNECTION_STRING: ${{ secrets.APPINSIGHTS_CONNECTION_STRING }}
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +78,7 @@ jobs:
           image="$ACR_SERVER/dreamplanner-frontend:$GITHUB_SHA"
           docker build \
             --build-arg "VITE_API_BASE_URL=$API_BASE_URL" \
+            --build-arg "VITE_APPINSIGHTS_CONNECTION_STRING=$APPINSIGHTS_CONNECTION_STRING" \
             --build-arg "APP_VERSION=$GITHUB_SHA" \
             -t "$image" frontend
           docker push "$image"
