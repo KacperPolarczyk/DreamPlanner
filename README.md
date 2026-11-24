@@ -19,6 +19,7 @@ DreamPlanner służy do planowania dyspozycyjności pracowników i zleceniobiorc
 - [Testowanie](#testowanie)
 - [CI/CD](#cicd)
 - [Bezpieczeństwo i hardening](#bezpieczeństwo-i-hardening)
+- [Monitoring i FinOps](#monitoring-i-finops) 
 
 ## Technologie i architektura
 
@@ -353,3 +354,40 @@ Weryfikacja:
 curl -I http://app-dreamplanner-frontend-77076.azurewebsites.net   # 301 → https
 curl -I https://app-dreamplanner-frontend-77076.azurewebsites.net  # 200 + nagłówki bezpieczeństwa
 ```
+
+## Monitoring i FinOps
+
+### Alert budżetowy (FinOps)
+| Próg | Kwota | Typ powiadomienia |
+|---|---|---|
+| 50% | *uzupełnić* | Ostrzeżenie informacyjne (e-mail) |
+| 80% | *uzupełnić* | Ostrzeżenie krytyczne (e-mail) |
+| 100% | *uzupełnić* | Alert natychmiastowy (e-mail) |
+
+Konfiguracja: Azure Cost Management → Budgets. Adresaci: wszyscy członkowie zespołu.
+
+### Healthcheck
+| Endpoint | Opis |
+|---|---|
+| `GET /api/v1/health` | Status aplikacji backendowej |
+| `GET /api/v1/health/ready` | Status aplikacji + połączenia z bazą danych |
+
+Frontend odpytuje `/health/ready` i wyświetla wskaźnik statusu API (komponent `ApiStatus`). Przy braku połączenia użytkownik widzi czytelny komunikat.
+
+### Logi i telemetria frontendu (Application Insights)
+Frontend wysyła telemetrię z przeglądarki do Azure Application Insights (`@microsoft/applicationinsights-web`, plik `frontend/src/telemetry.ts`):
+- odsłony stron i czas ładowania,
+- nieobsłużone błędy JavaScript,
+- wywołania REST API (status HTTP, czas odpowiedzi).
+
+Connection string jest przekazywany w czasie builda (`VITE_APPINSIGHTS_CONNECTION_STRING`) z sekretu GitHub `APPINSIGHTS_CONNECTION_STRING`. Bez niego (np. lokalnie) telemetria jest wyłączona.
+
+Przykładowe zapytanie KQL (Application Insights → Logs):
+```kusto
+pageViews
+| where timestamp > ago(1d)
+| summarize views = count() by name
+```
+
+### Dashboard
+*uzupełnić: link / opis kafelków (requests 2xx/4xx/5xx, czas odpowiedzi, CPU, RAM)*
