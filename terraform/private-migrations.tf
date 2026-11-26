@@ -34,6 +34,7 @@ resource "azurerm_linux_web_app" "migrations" {
     WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
     MIGRATION_JOB_SCRIPT                = filebase64("${path.module}/../database/scripts/migration_service.py")
     MIGRATION_DATABASE_URL              = "@Microsoft.KeyVault(SecretUri=https://${var.database_key_vault_name}.vault.azure.net/secrets/database-url-migration/)"
+    MIGRATION_EXPECTED_RELEASE          = ""
     MIGRATION_RUN_ID                    = "unconfigured"
     PGCONNECT_TIMEOUT                   = "15"
     PGOPTIONS                           = "-c lock_timeout=30s -c statement_timeout=300s"
@@ -44,6 +45,7 @@ resource "azurerm_linux_web_app" "migrations" {
     ignore_changes = [
       enabled,
       app_settings["MIGRATION_RUN_ID"],
+      app_settings["MIGRATION_EXPECTED_RELEASE"],
       site_config[0].application_stack[0].docker_image_name,
       site_config[0].ip_restriction,
     ]

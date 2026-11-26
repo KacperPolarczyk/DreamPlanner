@@ -70,9 +70,6 @@ jobs:
       RESOURCE_GROUP: rg-dreamplanner-dev
       WEBAPP_NAME: app-dreamplanner-backend-77076
       API_URL: https://app-dreamplanner-backend-77076-ckceebf7f3gkg3fz.polandcentral-01.azurewebsites.net
-      POSTGRES_SERVER: psql-dreamplanner-dev-77076
-      KEY_VAULT: kv-dreamplanner-77076
-      SUBSCRIPTION_ID: 70bfce50-cf28-4ae6-b788-01157f1f4893
     steps:
       - uses: actions/checkout@v4
       - name: Authenticate using GitHub OIDC
