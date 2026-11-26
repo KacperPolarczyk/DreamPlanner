@@ -338,7 +338,18 @@ Workflow [backend Azure](.github/workflows/backend-azure.yml) na pull requestach
 | Web (Frontend App Service) | Inbound | 80 (HTTP) | Internet (0.0.0.0/0) | Redirect 301 → 443 | Włączone HTTPS Only |
 | Web (Frontend App Service) | Outbound | 443 | Backend API (App Service) | Allow | Wywołania REST API wyłącznie po HTTPS |
 | App (Backend) | | | | | *uzupełnia backend* |
-| Data (PostgreSQL) | | | | | *uzupełnia DB* |
+| Data (PostgreSQL / Private Endpoint) | Inbound | 5432/TCP | `snet-backend` — `10.13.2.0/24` → `10.13.3.0/24` | Allow | Backend i aplikacja migracyjna; TLS `verify-full` |
+| Data (PostgreSQL) | Inbound | 5432/TCP | Internet | Deny (konfiguracja docelowa) | Wyłączenie Public Access po zweryfikowaniu prywatnych migracji |
+| Data (Private Endpoint) | Inbound | Wszystkie | Pozostały ruch VNet | Deny | NSG `nsg-database`, priorytet 200 |
+| Data (Private Endpoint) | Outbound | Odpowiedzi istniejących połączeń | Backend / aplikacja migracyjna | Stateful | NSG dopuszcza odpowiedzi na dozwolone połączenia; PE nie jest hostem aplikacyjnym |
+
+### Izolacja bazy i migracje
+
+Konfiguracja prywatnego dostępu oraz procedura przełączenia:
+[prywatne migracje](database/private-migrations.md). Aplikacja migracyjna używa
+tej samej podsieci integracyjnej co backend i oddzielnej tożsamości z odczytem
+wyłącznie sekretu migracyjnego. Runner GitHub steruje zadaniem przez HTTPS,
+bez bezpośredniego połączenia SQL i bez odczytywania hasła bazy.
 
 ### Hardening warstwy Web (frontend)
 

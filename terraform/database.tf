@@ -25,7 +25,7 @@ resource "azurerm_postgresql_flexible_server" "dreamplanner" {
   auto_grow_enabled             = false
   backup_retention_days         = 7
   geo_redundant_backup_enabled  = false
-  public_network_access_enabled = true
+  public_network_access_enabled = false
   administrator_login           = local.database_logins.admin
   administrator_password        = var.database_passwords.admin
 
@@ -50,13 +50,6 @@ resource "azurerm_postgresql_flexible_server_database" "dreamplanner" {
   lifecycle {
     prevent_destroy = true
   }
-}
-
-resource "azurerm_postgresql_flexible_server_firewall_rule" "dba" {
-  name             = "allow-dba"
-  server_id        = azurerm_postgresql_flexible_server.dreamplanner.id
-  start_ip_address = var.dba_public_ipv4
-  end_ip_address   = var.dba_public_ipv4
 }
 
 resource "azurerm_postgresql_flexible_server_configuration" "require_tls" {
