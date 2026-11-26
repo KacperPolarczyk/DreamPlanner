@@ -1,5 +1,6 @@
 # Run schema migrations from the same VNet integration subnet as the backend.
 # Reuse the existing plan; CI starts this app only for a migration execution.
+# enabled must remain true for start/stop to work; the idle app is stopped by CI.
 resource "azurerm_linux_web_app" "migrations" {
   name                                           = "app-dreamplanner-migrations-77076"
   resource_group_name                            = data.azurerm_resource_group.dreamplanner.name
@@ -7,7 +8,7 @@ resource "azurerm_linux_web_app" "migrations" {
   service_plan_id                                = data.azurerm_linux_web_app.backend_existing.service_plan_id
   virtual_network_subnet_id                      = azurerm_subnet.backend.id
   https_only                                     = true
-  enabled                                        = false
+  enabled                                        = true
   public_network_access_enabled                  = true
   ftp_publish_basic_authentication_enabled       = false
   webdeploy_publish_basic_authentication_enabled = false
@@ -22,7 +23,7 @@ resource "azurerm_linux_web_app" "migrations" {
     container_registry_use_managed_identity = true
     ip_restriction_default_action           = "Deny"
     scm_ip_restriction_default_action       = "Deny"
-    app_command_line                        = "python -c \"import base64,os;exec(base64.b64decode(os.environ['MIGRATION_JOB_SCRIPT']))\""
+    app_command_line                        = "python -c exec(__import__('base64').b64decode(__import__('os').environ['MIGRATION_JOB_SCRIPT']))"
     application_stack {
       docker_image_name   = "dreamplanner-backend:${var.migration_bootstrap_image_tag}"
       docker_registry_url = "https://${data.azurerm_container_registry.shared.login_server}"

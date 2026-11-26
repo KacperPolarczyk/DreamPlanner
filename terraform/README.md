@@ -61,7 +61,7 @@ The Terraform state must not be committed to Git.
 ### Backend CI and migrations
 
 `backend-access.tf` records backend deployment and runtime role assignments.
-`private-migrations.tf` adds a stopped-by-default migration App Service on the
+`private-migrations.tf` adds a migration App Service stopped between runs on the
 existing backend plan and VNet integration subnet. Its identity receives only
 ACR pull and access to `database-url-migration`; GitHub controls the job through
 HTTPS. See [private migrations](../database/private-migrations.md).

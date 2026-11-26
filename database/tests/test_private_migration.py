@@ -100,5 +100,30 @@ class PrivateMigrationTests(unittest.TestCase):
         self.assertEqual(service.STATE["status"], "failed")
 
 
+class StartupCommandTests(unittest.TestCase):
+    def test_azure_startup_argument_splitting(self):
+        import base64
+        import os
+        import re
+        import sys
+
+        source = (
+            Path(__file__).parents[2] / "terraform/private-migrations.tf"
+        ).read_text()
+        command = re.search(r'app_command_line\s*=\s*"([^"]+)"', source).group(1)
+        arguments = command.split()
+        self.assertEqual(len(arguments), 3)
+        env = os.environ.copy()
+        env["MIGRATION_JOB_SCRIPT"] = base64.b64encode(b"print('launcher-ok')").decode()
+        result = subprocess.run(
+            [sys.executable, *arguments[1:]],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(result.stdout.strip(), "launcher-ok")
+
+
 if __name__ == "__main__":
     unittest.main()
