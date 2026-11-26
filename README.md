@@ -416,4 +416,4 @@ W Azure Monitor → Workbooks otwórz **DreamPlanner — monitoring**. Dashboard
 - CPU i RAM współdzielonego planu App Service w procentach,
 - CPU i RAM PostgreSQL w procentach.
 
-CPU/RAM planu obejmują frontend, backend i okresowo migracje. Wykresy korzystają z danych Azure Monitor, które mają opóźnienie; pusty wykres nie oznacza zerowego zużycia. Szczegóły wdrożenia, zapytania KQL i weryfikacja: [Monitoring i koszty](docs/monitoring.md).
+CPU/RAM planu obejmują frontend, backend i okresowo migracje; te dwa wykresy pobierają dane bezpośrednio z Azure Metrics. Pozostałe korzystają z Log Analytics. Dane monitoringu mają opóźnienie; pusty wykres nie oznacza zerowego zużycia. Szczegóły wdrożenia, zapytania KQL i weryfikacja: [Monitoring i koszty](docs/monitoring.md).

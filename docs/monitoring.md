@@ -17,7 +17,7 @@ Connection string Application Insights pobierz z Azure i zapisz bez wypisywania 
 1. Sprawdź `GET /api/v1/health/ready`: HTTP 200, `{"status":"ok"}`. Endpoint tworzy nowe połączenie i wykonuje `SELECT 1`; błąd bazy zwraca 503. Sam `/health` nie weryfikuje PostgreSQL.
 2. Azure Portal → PostgreSQL → Diagnostic settings: `postgresql-to-log-analytics`, `PostgreSQLLogs` i `AllMetrics`.
 3. Azure Portal → Log Analytics → `log-dreamplanner-dev-77076` → Logs. Pierwsze rekordy mogą pojawić się z opóźnieniem po utworzeniu ustawień; Azure podaje do 90 minut na rozpoczęcie przesyłania danych.
-4. Azure Monitor → Workbooks → `DreamPlanner — monitoring`: sprawdź metryki i czas odpowiedzi. Odświeżaj widok podczas obserwacji.
+4. Azure Monitor → Workbooks → `DreamPlanner — monitoring`: sprawdź metryki i czas odpowiedzi. CPU/RAM planu pochodzą bezpośrednio z Azure Metrics, bez oczekiwania na ich eksport do workspace. Pozostałe wykresy korzystają z KQL. Odświeżaj widok podczas obserwacji.
 5. Cost Management → właściwa grupa zasobów → Budgets → `budget-dreamplanner-monthly`: zweryfikuj kwotę, walutę, okres i trzech odbiorców progu 80%.
 
 ## Zapytania KQL w workspace

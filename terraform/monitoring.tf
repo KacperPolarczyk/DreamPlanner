@@ -89,7 +89,8 @@ resource "azurerm_application_insights_workbook" "operations" {
   description         = "API response times, HTTP statuses, hosting CPU/memory and PostgreSQL metrics."
   source_id           = lower(azurerm_log_analytics_workspace.monitoring.id)
   data_json = templatefile("${path.module}/monitoring-workbook.json", {
-    workspace_id = azurerm_log_analytics_workspace.monitoring.id
+    workspace_id    = azurerm_log_analytics_workspace.monitoring.id
+    hosting_plan_id = data.azurerm_service_plan.shared.id
   })
   tags = local.database_tags
 }

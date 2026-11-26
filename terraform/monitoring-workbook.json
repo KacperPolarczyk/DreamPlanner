@@ -9,6 +9,32 @@
       }
     },
     {
+      "type": 9,
+      "name": "hosting-plan",
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "a57c5d52-8aeb-4b7b-8d65-8a82c29aa984",
+            "version": "KqlParameterItem/1.0",
+            "name": "HostingPlan",
+            "type": 5,
+            "isRequired": true,
+            "multiSelect": true,
+            "isHiddenWhenLocked": true,
+            "typeSettings": {
+              "resourceTypeFilter": {
+                "microsoft.web/serverfarms": true
+              }
+            },
+            "value": [
+              "${hosting_plan_id}"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "type": 3,
       "name": "chart-0",
       "content": {
@@ -47,40 +73,48 @@
       }
     },
     {
-      "type": 3,
+      "type": 10,
       "name": "chart-2",
       "content": {
-        "version": "KqlItem/1.0",
-        "query": "AzureMetrics\n| where TimeGenerated > ago(1h)\n| where ResourceProvider =~ \"MICROSOFT.WEB\" and MetricName == \"CpuPercentage\"\n| summarize CPU=avg(Average) by bin(TimeGenerated, 1m)",
-        "size": 0,
+        "version": "MetricsItem/1.0",
+        "chartId": "chart-2-dreamplanner",
         "title": "Plan App Service — CPU (%)",
-        "queryType": 0,
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "visualization": "timechart",
+        "size": 0,
         "timeContext": {
           "durationMs": 3600000
         },
-        "crossComponentResources": [
-          "${workspace_id}"
+        "resourceType": "microsoft.web/serverfarms",
+        "resourceParameter": "HostingPlan",
+        "metrics": [
+          {
+            "namespace": "microsoft.web/serverfarms",
+            "metric": "microsoft.web/serverfarms--CpuPercentage",
+            "aggregation": 4,
+            "chartType": 2
+          }
         ]
       }
     },
     {
-      "type": 3,
+      "type": 10,
       "name": "chart-3",
       "content": {
-        "version": "KqlItem/1.0",
-        "query": "AzureMetrics\n| where TimeGenerated > ago(1h)\n| where ResourceProvider =~ \"MICROSOFT.WEB\" and MetricName == \"MemoryPercentage\"\n| summarize RAM=avg(Average) by bin(TimeGenerated, 1m)",
-        "size": 0,
+        "version": "MetricsItem/1.0",
+        "chartId": "chart-3-dreamplanner",
         "title": "Plan App Service — RAM (%)",
-        "queryType": 0,
-        "resourceType": "microsoft.operationalinsights/workspaces",
-        "visualization": "timechart",
+        "size": 0,
         "timeContext": {
           "durationMs": 3600000
         },
-        "crossComponentResources": [
-          "${workspace_id}"
+        "resourceType": "microsoft.web/serverfarms",
+        "resourceParameter": "HostingPlan",
+        "metrics": [
+          {
+            "namespace": "microsoft.web/serverfarms",
+            "metric": "microsoft.web/serverfarms--MemoryPercentage",
+            "aggregation": 4,
+            "chartType": 2
+          }
         ]
       }
     },
