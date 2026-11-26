@@ -381,7 +381,7 @@ Budżet `budget-dreamplanner-monthly` obejmuje grupę `rg-dreamplanner-dev` i wy
 
 | Próg | Kwota | Powiadomienie |
 |---|---|---|
-| 80% | 80 EUR | E-mail do trzech skonfigurowanych członków zespołu |
+| 80% | 80 EUR | E-mail do czterech skonfigurowanych członków zespołu |
 
 Lista adresatów jest przekazywana przez lokalną zmienną Terraform `budget_contact_emails`; nie zapisujemy adresów w repozytorium. Alert informuje o kosztach, nie wyłącza zasobów i nie stanowi limitu wydatków. Koszty i powiadomienia mogą pojawiać się z opóźnieniem. Miesięczny budżet jest niezależny od pozostałego kredytu Azure for Students.
 
