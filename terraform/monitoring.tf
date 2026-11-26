@@ -40,11 +40,11 @@ resource "azurerm_monitor_diagnostic_setting" "postgresql" {
 }
 
 resource "azurerm_monitor_diagnostic_setting" "web_apps" {
-  for_each                       = local.monitoring_web_apps
-  name                           = "application-to-log-analytics"
-  target_resource_id             = each.value
-  log_analytics_workspace_id     = azurerm_log_analytics_workspace.monitoring.id
-  log_analytics_destination_type = "Dedicated"
+  for_each                   = local.monitoring_web_apps
+  name                       = "application-to-log-analytics"
+  target_resource_id         = each.value
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.monitoring.id
+  # App Service uses its native tables and ignores destination_type.
   enabled_log { category = "AppServiceConsoleLogs" }
   enabled_log { category = "AppServiceHTTPLogs" }
   enabled_metric { category = "AllMetrics" }

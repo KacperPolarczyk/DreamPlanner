@@ -16,7 +16,7 @@ Connection string Application Insights pobierz z Azure i zapisz bez wypisywania 
 
 1. Sprawdź `GET /api/v1/health/ready`: HTTP 200, `{"status":"ok"}`. Endpoint tworzy nowe połączenie i wykonuje `SELECT 1`; błąd bazy zwraca 503. Sam `/health` nie weryfikuje PostgreSQL.
 2. Azure Portal → PostgreSQL → Diagnostic settings: `postgresql-to-log-analytics`, `PostgreSQLLogs` i `AllMetrics`.
-3. Azure Portal → Log Analytics → `log-dreamplanner-dev-77076` → Logs. Pierwsze rekordy mogą pojawić się z opóźnieniem po utworzeniu ustawień.
+3. Azure Portal → Log Analytics → `log-dreamplanner-dev-77076` → Logs. Pierwsze rekordy mogą pojawić się z opóźnieniem po utworzeniu ustawień; Azure podaje do 90 minut na rozpoczęcie przesyłania danych.
 4. Azure Monitor → Workbooks → `DreamPlanner — monitoring`: sprawdź metryki i czas odpowiedzi. Odświeżaj widok podczas obserwacji.
 5. Cost Management → właściwa grupa zasobów → Budgets → `budget-dreamplanner-monthly`: zweryfikuj kwotę, walutę, okres i trzech odbiorców progu 80%.
 
@@ -25,9 +25,9 @@ Connection string Application Insights pobierz z Azure i zapisz bez wypisywania 
 Liczba rekordów i najnowszy wpis z każdego źródła (bez ujawniania treści logów):
 
 ```kusto
-union isfuzzy=true withsource=Source PGSQLServerLogs, AppServiceConsoleLogs, AppServiceHTTPLogs, AzureMetrics, AppPageViews, AppDependencies
+union isfuzzy=true withsource=TableOrigin PGSQLServerLogs, AppServiceConsoleLogs, AppServiceHTTPLogs, AzureMetrics, AppPageViews, AppDependencies
 | where TimeGenerated > ago(1h)
-| summarize Records=count(), Latest=max(TimeGenerated) by Source
+| summarize Records=count(), Latest=max(TimeGenerated) by TableOrigin
 ```
 
 Logi serwera bazy:
@@ -61,4 +61,4 @@ AppPageViews
 
 Workspace używa PerGB2018, retencji 30 dni i dziennego limitu 0,1 GB; Application Insights ma ten sam limit. Osiągnięcie limitu może przerwać zbieranie danych do następnego resetu; Azure może naliczyć także dane przekraczające limit w trakcie przetwarzania. Monitoruj `Usage` i bieżące koszty. Alert budżetowy nie zatrzymuje aplikacji ani bazy. Częstotliwość odświeżania kosztów nie pozwala traktować go jako alarmu natychmiastowego.
 
-Dokumentacja: [limit danych Azure Monitor](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/daily-cap), [logi PostgreSQL](https://learn.microsoft.com/en-us/azure/postgresql/monitor/how-to-configure-and-access-logs), [pola logów HTTP](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/appservicehttplogs).
+Dokumentacja: [opóźnienie uruchomienia diagnostyki](https://learn.microsoft.com/en-us/azure/azure-monitor/platform/diagnostic-settings), [limit danych Azure Monitor](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/daily-cap), [logi PostgreSQL](https://learn.microsoft.com/en-us/azure/postgresql/monitor/how-to-configure-and-access-logs), [pola logów HTTP](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/appservicehttplogs).
