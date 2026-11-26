@@ -36,7 +36,7 @@ variable "database_ssl_root_cert" {
 }
 
 variable "dba_public_ipv4" {
-  description = "Single public IPv4 allowed to administer PostgreSQL"
+  description = "Deprecated input retained for old tfvars; unused by private-only access"
   type        = string
   default     = "80.68.235.174"
 
