@@ -17,7 +17,19 @@ spec.loader.exec_module(service)
 class PrivateMigrationTests(unittest.TestCase):
     def setUp(self):
         service.STATE.clear()
-        service.STATE.update(run_id="test-1", release_id="a" * 40, status="starting")
+        service.STATE.update(
+            run_id="test-1",
+            release_id="a" * 40,
+            expected_release_id="a" * 40,
+            status="starting",
+        )
+
+    def test_stale_image_never_runs_migrations(self):
+        service.STATE["release_id"] = "b" * 40
+        with patch.object(service.subprocess, "run") as run:
+            service.migrate()
+        run.assert_not_called()
+        self.assertEqual(service.STATE["status"], "failed")
 
     def test_public_dns_never_runs_migrations(self):
         with (

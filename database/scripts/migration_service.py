@@ -3,6 +3,7 @@
 import ipaddress
 import json
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -11,13 +12,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 STATE = {
     "run_id": os.environ.get("MIGRATION_RUN_ID", ""),
     "release_id": os.environ.get("RELEASE_ID", ""),
+    "expected_release_id": os.environ.get("MIGRATION_EXPECTED_RELEASE", ""),
     "status": "starting",
 }
 
 
 def migrate():
     try:
-        if not STATE["run_id"] or not STATE["release_id"]:
+        if (
+            not STATE["run_id"]
+            or STATE["run_id"] == "unconfigured"
+            or not re.fullmatch(r"[0-9a-f]{40}", STATE["release_id"])
+            or STATE["release_id"] != STATE["expected_release_id"]
+        ):
             raise ValueError("Missing execution identity")
         addresses = {
             item[4][0]

@@ -83,6 +83,7 @@ def run(sha, run_id):
             APP,
             "--settings",
             f"MIGRATION_RUN_ID={run_id}",
+            f"MIGRATION_EXPECTED_RELEASE={sha}",
             f"MIGRATION_JOB_SCRIPT={script}",
         )
         az(
