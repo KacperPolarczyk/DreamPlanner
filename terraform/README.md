@@ -60,23 +60,17 @@ The Terraform state must not be committed to Git.
 
 ### Backend CI and migrations
 
-`backend-access.tf` records the backend deployment and runtime role assignments.
-`backend-migrations.tf` grants the GitHub OIDC identity read access to only
-`database-url-migration` and a custom firewall-rule role on the PostgreSQL server.
-It cannot change server settings, grant IAM roles or read the administrator secret
-through these new migration grants. Firewall permissions cover all rules on that
-server; the workflow only creates and deletes its own per-run rule.
+`backend-access.tf` records backend deployment and runtime role assignments.
+`private-migrations.tf` adds a migration App Service stopped between runs on the
+existing backend plan and VNet integration subnet. Its identity receives only
+ACR pull and access to `database-url-migration`; GitHub controls the job through
+HTTPS. See [private migrations](../database/private-migrations.md).
 
-These IAM resources were provisioned through Azure CLI. Import the existing role
-assignments and custom role into the existing Terraform state before applying;
-otherwise Terraform may attempt duplicate assignments. Review the complete plan:
-the older database configuration still declares the deleted user-assigned backend
-identity. Do not apply that stale declaration as part of enabling migrations.
-
-The GitHub-hosted runner temporarily uses the already-enabled public PostgreSQL
-endpoint with a single IPv4 firewall rule and TLS hostname verification. It does
-not change the application's private database route. See the backend README for
-execution order, cleanup and migration compatibility requirements.
+Roll out and verify the private migration service and updated workflow before
+applying the database network restriction. The old public-runner workflow cannot
+migrate after public access is disabled. Review the entire Terraform plan:
+legacy configuration still declares a deleted backend user-assigned identity.
+Do not recreate unrelated resources during this network change.
 
 Prerequisites:
 
@@ -123,8 +117,8 @@ local backup retention and no HA or geo-redundant backup. This is a development
 configuration. Compute, storage, Private Endpoint and Key Vault may consume Azure
 credits; a student subscription does not by itself guarantee zero cost.
 
-The only public database firewall rule admits `dba_public_ipv4`. Do not add the
-Azure-wide `0.0.0.0` exception. Backend traffic uses the Private Endpoint and the
+The target configuration disables public database access and removes `allow-dba`.
+Do not add the Azure-wide `0.0.0.0` exception. Backend traffic uses the Private Endpoint and the
 `privatelink.postgres.database.azure.com` DNS zone linked to the project VNet.
 Always use the server FQDN, not the endpoint IP, so TLS hostname verification works.
 
@@ -135,7 +129,7 @@ replacement or removal explicitly rather than bypassing the lifecycle guard.
 
 Terraform creates the server and database, while `database/bootstrap.py` creates
 SQL logins and grants. Key Vault secrets alone do not create SQL users.
-Run from the repository root and the allowed DBA IP, with Azure CLI authenticated as the DBA:
+Run from an authorized host with private VNet connectivity, with Azure CLI authenticated as the DBA:
 
 ```bash
 python3 -m venv .venv
@@ -147,8 +141,8 @@ python3 -m venv .venv
 Both scripts read secrets into memory and do not print passwords. The check creates
 a uniquely named disposable table as the migration login, verifies runtime CRUD,
 checks TLS and denies runtime DDL, then removes the table. Run the same check from
-the backend network to verify the private route; a successful DBA public connection
-does not prove backend connectivity.
+the backend network to verify the private route. A laptop without private network
+connectivity cannot run these checks after the public endpoint is disabled.
 
 When rotating migration or application passwords, update the sensitive Terraform
 input and Key Vault through Terraform, then rerun the bootstrap during a maintenance
