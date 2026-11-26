@@ -243,3 +243,9 @@ on the frontend app only. The workflow owns the deployed image tag.
 
 The backend subnet delegation in `subnets.tf` matches the existing App Service
 VNet integration; removing it would disrupt the backend.
+
+## Monitoring i koszty
+
+`monitoring.tf` zarządza workspace Log Analytics, Application Insights, diagnostyką PostgreSQL i aplikacji, workbookiem oraz budżetem grupy zasobów. Dane kontaktowe ustaw w ignorowanym `*.auto.tfvars` jako `budget_contact_emails = ["adres@example.com"]`. Connection string jest wyjściem sensitive; przekazuj go bez wypisywania do sekretu GitHub `APPINSIGHTS_CONNECTION_STRING`.
+
+Konfiguracja logów istniejących aplikacji i sondy bazy jest odtwarzana przez `scripts/configure-observability.sh`. Szczegóły i zapytania w [dokumentacji monitoringu](../docs/monitoring.md).

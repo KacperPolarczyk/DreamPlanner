@@ -376,36 +376,44 @@ curl -I https://app-dreamplanner-frontend-77076.azurewebsites.net  # 200 + nagł
 ## Monitoring i FinOps
 
 ### Alert budżetowy (FinOps)
-| Próg | Kwota | Typ powiadomienia |
-|---|---|---|
-| 50% | *uzupełnić* | Ostrzeżenie informacyjne (e-mail) |
-| 80% | *uzupełnić* | Ostrzeżenie krytyczne (e-mail) |
-| 100% | *uzupełnić* | Alert natychmiastowy (e-mail) |
 
-Konfiguracja: Azure Cost Management → Budgets. Adresaci: wszyscy członkowie zespołu.
+Budżet `budget-dreamplanner-monthly` obejmuje grupę `rg-dreamplanner-dev` i wynosi **100 EUR miesięcznie** (waluta rozliczeniowa subskrypcji). Aktywny próg kosztów rzeczywistych:
+
+| Próg | Kwota | Powiadomienie |
+|---|---|---|
+| 80% | 80 EUR | E-mail do trzech skonfigurowanych członków zespołu |
+
+Lista adresatów jest przekazywana przez lokalną zmienną Terraform `budget_contact_emails`; nie zapisujemy adresów w repozytorium. Alert informuje o kosztach, nie wyłącza zasobów i nie stanowi limitu wydatków. Koszty i powiadomienia mogą pojawiać się z opóźnieniem. Miesięczny budżet jest niezależny od pozostałego kredytu Azure for Students.
 
 ### Healthcheck
+
 | Endpoint | Opis |
 |---|---|
-| `GET /api/v1/health` | Status aplikacji backendowej |
-| `GET /api/v1/health/ready` | Status aplikacji + połączenia z bazą danych |
+| `GET /api/v1/health` | Stan procesu API, bez zapytania do bazy |
+| `GET /api/v1/health/ready` | Nowe połączenie z PostgreSQL i odczytowe `SELECT 1` |
 
-Frontend odpytuje `/health/ready` i wyświetla wskaźnik statusu API (komponent `ApiStatus`). Przy braku połączenia użytkownik widzi czytelny komunikat.
+Poprawna odpowiedź to HTTP 200 i `{"status":"ok"}`. Niedostępna baza powoduje HTTP 503. App Service Health Check backendu wskazuje `/api/v1/health/ready`; konfigurację odtwarza [skrypt administracyjny](scripts/configure-observability.sh). Frontend również odpytuje ten endpoint i wyświetla wskaźnik stanu API (`ApiStatus`).
 
-### Logi i telemetria frontendu (Application Insights)
-Frontend wysyła telemetrię z przeglądarki do Azure Application Insights (`@microsoft/applicationinsights-web`, plik `frontend/src/telemetry.ts`):
-- odsłony stron i czas ładowania,
-- nieobsłużone błędy JavaScript,
-- wywołania REST API (status HTTP, czas odpowiedzi).
+### Logi i telemetria
 
-Connection string jest przekazywany w czasie builda (`VITE_APPINSIGHTS_CONNECTION_STRING`) z sekretu GitHub `APPINSIGHTS_CONNECTION_STRING`. Bez niego (np. lokalnie) telemetria jest wyłączona.
+Wspólny workspace `log-dreamplanner-dev-77076` w Poland Central zbiera:
 
-Przykładowe zapytanie KQL (Application Insights → Logs):
-```kusto
-pageViews
-| where timestamp > ago(1d)
-| summarize views = count() by name
-```
+- logi PostgreSQL (`PostgreSQLLogs`, tabela `PGSQLServerLogs`),
+- stdout/stderr aplikacji (`AppServiceConsoleLogs`) oraz żądania HTTP (`AppServiceHTTPLogs`),
+- metryki bazy, aplikacji i współdzielonego planu (`AzureMetrics`),
+- telemetrię przeglądarki z workspace-based Application Insights `appi-dreamplanner-dev-77076`.
+
+Frontend używa `@microsoft/applicationinsights-web` (`frontend/src/telemetry.ts`): odsłony, błędy JavaScript i wywołania REST. Connection string trafia do builda przez sekret GitHub `APPINSIGHTS_CONNECTION_STRING` jako `VITE_APPINSIGHTS_CONNECTION_STRING`. Zmiana sekretu wymaga ponownego uruchomienia workflow frontendu. Bez niego telemetria jest wyłączona. Connection string klienta jest widoczny w wynikowym JavaScript i służy do wysyłania telemetrii, nie do odczytu zasobów Azure. Backend wysyła logi przez Diagnostic settings; samo utworzenie Application Insights nie dodaje instrumentacji SDK do API.
+
+Retencja workspace wynosi 30 dni, a dzienny limit danych workspace i Application Insights 0,1 GB. Limit jest zabezpieczeniem na wypadek wzrostu ruchu, może zostać przekroczony podczas przetwarzania danych i po osiągnięciu zatrzymuje zbieranie części telemetrii do resetu. Nie gwarantuje maksymalnej kwoty faktury. Włączone są wybrane kategorie logów, bez Query Store i pełnego logowania treści zapytań SQL.
 
 ### Dashboard
-*uzupełnić: link / opis kafelków (requests 2xx/4xx/5xx, czas odpowiedzi, CPU, RAM)*
+
+W Azure Monitor → Workbooks otwórz **DreamPlanner — monitoring**. Dashboard obejmuje ostatnią godzinę:
+
+- liczbę odpowiedzi API według klas statusu HTTP,
+- średni czas odpowiedzi API w milisekundach,
+- CPU i RAM współdzielonego planu App Service w procentach,
+- CPU i RAM PostgreSQL w procentach.
+
+CPU/RAM planu obejmują frontend, backend i okresowo migracje. Wykresy korzystają z danych Azure Monitor, które mają opóźnienie; pusty wykres nie oznacza zerowego zużycia. Szczegóły wdrożenia, zapytania KQL i weryfikacja: [Monitoring i koszty](docs/monitoring.md).
