@@ -336,20 +336,27 @@ Workflow [backend Azure](.github/workflows/backend-azure.yml) na pull requestach
 |---|---|---|---|---|---|
 | Web (Frontend App Service) | Inbound | 443 (HTTPS) | Internet (0.0.0.0/0) | Allow | Dostęp użytkowników, certyfikat Azure `*.azurewebsites.net` |
 | Web (Frontend App Service) | Inbound | 80 (HTTP) | Internet (0.0.0.0/0) | Redirect 301 → 443 | Włączone HTTPS Only |
-| Web (Frontend App Service) | Outbound | 443 | Backend API (App Service) | Allow | Wywołania REST API wyłącznie po HTTPS |
+| Web (SPA w przeglądarce) | Outbound | 443 | Publiczne API backendu | HTTPS | Żądania wysyła przeglądarka, nie serwer nginx |
 | App (Backend) | | | | | *uzupełnia backend* |
 | Data (PostgreSQL / Private Endpoint) | Inbound | 5432/TCP | `snet-backend` — `10.13.2.0/24` → `10.13.3.0/24` | Allow | Backend i aplikacja migracyjna; TLS `verify-full` |
-| Data (PostgreSQL) | Inbound | 5432/TCP | Internet | Deny (konfiguracja docelowa) | Wyłączenie Public Access po zweryfikowaniu prywatnych migracji |
+| Data (PostgreSQL) | Inbound | 5432/TCP | Internet | Deny | Public Access wyłączony; brak publicznych reguł zapory |
 | Data (Private Endpoint) | Inbound | Wszystkie | Pozostały ruch VNet | Deny | NSG `nsg-database`, priorytet 200 |
 | Data (Private Endpoint) | Outbound | Odpowiedzi istniejących połączeń | Backend / aplikacja migracyjna | Stateful | NSG dopuszcza odpowiedzi na dozwolone połączenia; PE nie jest hostem aplikacyjnym |
 
 ### Izolacja bazy i migracje
 
+Baza korzysta wyłącznie z Private Endpoint. Migracje i backend mają dostęp
+z `snet-backend`; publiczny wyjątek DBA został usunięty.
 Konfiguracja prywatnego dostępu oraz procedura przełączenia:
 [prywatne migracje](database/private-migrations.md). Aplikacja migracyjna używa
 tej samej podsieci integracyjnej co backend i oddzielnej tożsamości z odczytem
 wyłącznie sekretu migracyjnego. Runner GitHub steruje zadaniem przez HTTPS,
 bez bezpośredniego połączenia SQL i bez odczytywania hasła bazy.
+
+Publiczne API nadal obsługuje przeglądarki bezpośrednio. CORS nie zastępuje
+reguł dostępu sieciowego; ograniczenie API wyłącznie do warstwy web wymaga
+wcześniejszego przygotowania proxy lub innej warstwy pośredniej. NSG podsieci
+integracyjnej App Service nie ogranicza jego publicznego wejścia HTTPS.
 
 ### Hardening warstwy Web (frontend)
 
