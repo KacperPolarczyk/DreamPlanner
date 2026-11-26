@@ -378,9 +378,7 @@ curl -I https://app-dreamplanner-frontend-77076.azurewebsites.net  # 200 + nagł
 ### Alert budżetowy (FinOps)
 | Próg | Kwota | Typ powiadomienia |
 |---|---|---|
-| 50% | *uzupełnić* | Ostrzeżenie informacyjne (e-mail) |
-| 80% | *uzupełnić* | Ostrzeżenie krytyczne (e-mail) |
-| 100% | *uzupełnić* | Alert natychmiastowy (e-mail) |
+| 80% | 80EUR | Ostrzeżenie krytyczne (e-mail) |
 
 Konfiguracja: Azure Cost Management → Budgets. Adresaci: wszyscy członkowie zespołu.
 
