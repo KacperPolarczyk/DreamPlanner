@@ -31,6 +31,7 @@ REQUIRED = set(NAMES) | {
     "test_domain_migration",
     "test_auth_migration",
     "test_postgres_connection",
+    "test_http_database_postgres",
 }
 
 

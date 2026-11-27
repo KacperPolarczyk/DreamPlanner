@@ -51,7 +51,7 @@ jobs:
       - name: Generate disposable signing key
         run: echo "JWT_SIGNING_KEY_BASE64=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       - name: Check database test tooling
-        run: uv run --no-sync ruff check scripts/ci_postgres.py tests/integration/test_runtime_privileges_postgres.py
+        run: uv run --no-sync ruff check scripts/ci_postgres.py tests/integration/test_runtime_privileges_postgres.py tests/integration/test_http_database_postgres.py
       - name: Run isolated PostgreSQL integration suite
         env:
           CI_POSTGRES_ADMIN_URL: postgresql://postgres:ci-disposable-postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres

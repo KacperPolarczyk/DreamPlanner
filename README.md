@@ -406,6 +406,21 @@ pageViews
 | summarize views = count() by name
 ```
 
+## Testy integracyjne API i PostgreSQL
+
+Workflow `database-ci.yml` uruchamia migracje i testy na jednorazowym PostgreSQL 16.
+Każdy moduł ma oddzielną bazę; role migracji i aplikacji mają rozdzielone uprawnienia.
+Moduł `test_http_database_postgres.py` sprawdza pełną ścieżkę logowania i zapisu
+HTTP → baza: statusy/nagłówki, odczyt zatwierdzonych danych z nowego połączenia,
+konflikty unikalności, odmowę zapisu bez uprawnień i unieważnienie sesji.
+
+[Instrukcja lokalnego uruchomienia i zakres testów](database/ci.md).
+Runner kończy się błędem także przy pominięciu testów. Wyniki dostępne są w Summary
+jobu **PostgreSQL - migrations and integration tests** oraz artefakcie
+`postgres-test-results` (JUnit XML, `summary.json`, `summary.md`; retencja 14 dni).
+Nie są to testy produkcyjnej bazy Azure; środowisko wdrożone weryfikuje osobny test
+Playwright opisany poniżej.
+
 ## Testy E2E
 
 Testy end-to-end interfejsu użytkownika napisane w **Playwright** (`frontend/e2e/`). Uruchamiają się na środowisku produkcyjnym w Azure.
@@ -427,7 +442,8 @@ npx playwright install chromium
 
 export LIVE_APP_URL=https://app-dreamplanner-frontend-77076.azurewebsites.net
 export E2E_USER='<email konta testowego>'
-read -s "E2E_PASSWORD?Hasło: " && export E2E_PASSWORD
+read -rsp "Hasło: " E2E_PASSWORD; echo
+export E2E_PASSWORD
 
 npx playwright test            # tryb headless
 npx playwright test --headed   # z widoczną przeglądarką
