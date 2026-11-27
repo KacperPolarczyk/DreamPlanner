@@ -1,3 +1,5 @@
+import socket
+
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import NullPool
 
@@ -114,3 +116,28 @@ def test_readiness_without_database_url_is_unavailable(monkeypatch) -> None:
     with TestClient(app) as client:
         response = client.get("/api/v1/health/ready")
     assert response.status_code == 503
+
+
+def test_real_database_connection_failure_keeps_liveness_and_redacts_credentials(
+    monkeypatch,
+) -> None:
+    """Reserve a non-listening local port: psycopg must encounter a real refusal."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as unavailable:
+        unavailable.bind(("127.0.0.1", 0))
+        port = unavailable.getsockname()[1]
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            f"postgresql://probe:must-not-leak@127.0.0.1:{port}/unavailable",
+        )
+        with TestClient(app) as client:
+            readiness = client.get("/api/v1/health/ready")
+            liveness = client.get("/api/v1/health")
+
+    assert readiness.status_code == 503
+    assert readiness.headers["content-type"] == "application/problem+json"
+    assert readiness.headers["cache-control"] == "no-store"
+    assert readiness.json()["detail"] == "Baza danych jest niedostępna."
+    for private_detail in ("must-not-leak", "127.0.0.1", str(port), "psycopg"):
+        assert private_detail not in readiness.text
+    assert liveness.status_code == 200
+    assert liveness.json() == {"status": "ok"}
