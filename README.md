@@ -19,7 +19,8 @@ DreamPlanner służy do planowania dyspozycyjności pracowników i zleceniobiorc
 - [Testowanie](#testowanie)
 - [CI/CD](#cicd)
 - [Bezpieczeństwo i hardening](#bezpieczeństwo-i-hardening)
-- [Monitoring i FinOps](#monitoring-i-finops) 
+- [Monitoring i FinOps](#monitoring-i-finops)
+- [Testy E2E](#testy-e2e)
 
 ## Technologie i architektura
 
@@ -417,3 +418,51 @@ W Azure Monitor → Workbooks otwórz **DreamPlanner — monitoring**. Dashboard
 - CPU i RAM PostgreSQL w procentach.
 
 CPU/RAM planu obejmują frontend, backend i okresowo migracje; te dwa wykresy pobierają dane bezpośrednio z Azure Metrics. Pozostałe korzystają z Log Analytics. Dane monitoringu mają opóźnienie; pusty wykres nie oznacza zerowego zużycia. Szczegóły wdrożenia, zapytania KQL i weryfikacja: [Monitoring i koszty](docs/monitoring.md).
+
+## Testy E2E
+
+Testy end-to-end interfejsu użytkownika napisane w **Playwright** (`frontend/e2e/`). Uruchamiają się na środowisku produkcyjnym w Azure.
+
+### Scenariusz `positions.spec.ts` – kluczowa ścieżka administratora
+1. Otwarcie aplikacji i logowanie kontem administratora.
+2. Przejście do zakładki **Stanowiska**.
+3. Dodanie stanowiska o unikalnej nazwie `E2E-<timestamp>` (formularz: input + submit).
+4. Asercje: komunikat „Dodano stanowisko.” oraz nowy wiersz na liście ze statusem **Aktywne**.
+5. Sprzątanie: dezaktywacja rekordu testowego (akceptacja okna potwierdzenia) i asercja statusu **Nieaktywne**.
+
+Selektory oparte są na etykietach i rolach (`getByLabel`, `getByRole`), więc testy są odporne na zmiany stylów CSS.
+
+### Uruchomienie lokalne
+```bash
+cd frontend
+npm ci
+npx playwright install chromium
+
+export LIVE_APP_URL=https://app-dreamplanner-frontend-77076.azurewebsites.net
+export E2E_USER='<email konta testowego>'
+read -s "E2E_PASSWORD?Hasło: " && export E2E_PASSWORD
+
+npx playwright test            # tryb headless
+npx playwright test --headed   # z widoczną przeglądarką
+npx playwright show-report     # raport HTML
+```
+Bez `E2E_USER` / `E2E_PASSWORD` test jest pomijany (skipped) zamiast kończyć się błędem.
+
+### Testy w CI/CD (GitHub Actions)
+Job **E2E tests (Playwright)** w workflow `frontend-azure.yml`:
+- uruchamia się **po udanym deployu** frontendu (`needs:`), więc testuje faktycznie wdrożoną wersję,
+- działa w trybie **headless** (Chromium),
+- dane logowania pobiera z sekretów repozytorium `E2E_USER` i `E2E_PASSWORD`.
+
+### Interpretacja wyników i artefakty
+| Wynik | Znaczenie |
+|---|---|
+| `passed` | Kluczowa ścieżka użytkownika działa na produkcji |
+| `failed` | Błąd – sprawdź artefakt `playwright-failures` |
+| `skipped` | Brak sekretów `E2E_USER` / `E2E_PASSWORD` |
+
+Artefakty przebiegu (Actions → przebieg → Summary → **Artifacts**):
+- `playwright-report`: raport HTML, zapisywany zawsze,
+- `playwright-failures`: zrzuty ekranu, nagrania wideo i trace, zapisywane **tylko przy błędzie** (`if: failure()`).
+
+Trace otwiera się poleceniem `npx playwright show-trace <plik>.zip` albo na https://trace.playwright.dev.
